@@ -71,11 +71,11 @@ graph TB
 
 | Layer | Choice / Version | Role in Feature | Notes |
 |-------|------------------|-----------------|-------|
-| Frontend / CLI | Web Audio API, WebSocket | 音声I/O、双方向通信 | AudioWorkletを主経路、ユーザー操作でAudioContextを開始 |
-| Backend / Services | Node.js LTS + TypeScript | ローカルオーケストレータ | API/WS境界とセッション管理 |
+| Frontend / CLI | React + TypeScript (Vite) | UI/状態表示、音声I/O、双方向通信 | AudioWorkletを主経路、ユーザー操作でAudioContextを開始 |
+| Backend / Services | Go 1.22 | ローカルオーケストレータ | API/WS境界とセッション管理 |
 | Data / Storage | In-memory + Local file (opt-in) | セッション/ログ | 保持期限と削除APIを用意 |
-| Messaging / Events | WebSocket (RFC6455) | 制御/音声チャンク | MVPはWS一本化 |
-| Infrastructure / Runtime | Localhost / RFC1918, Optional Docker | ローカル隔離 | RFC1918 + localhost のみ通信 |
+| Messaging / Events | WebSocket (github.com/coder/websocket) | 制御/音声チャンク | MVPはWS一本化 |
+| Infrastructure / Runtime | Docker Compose, Localhost / RFC1918 | ローカル隔離 | RFC1918 + localhost のみ通信 |
 | ASR | whisper.cpp (latest stable) | ローカル音声認識 | アダプタ経由 |
 | LLM | llama.cpp server (latest stable) | ローカル推論 | OpenAI互換JSON |
 | TTS | VOICEVOX Engine (latest stable) | 日本語TTS | 24kHz出力前提 |
@@ -679,6 +679,7 @@ interface TTSService {
 - すべての通信を RFC1918 と localhost（127.0.0.0/8）に限定
 - ログから音声/本文を除外
 - UIで録音中を明示
+ - Docker Compose でローカル境界内の通信に限定する
 
 ### Performance & Scalability
 - パフォーマンスは実装後の計測結果に基づきチューニングする
