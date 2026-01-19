@@ -12,8 +12,7 @@
 1. The Voice Chat Web App shall 音声・テキストの処理をローカル環境内で完結させる
 2. When ネットワーク接続が利用できない, the Voice Chat Web App shall 主要な音声対話機能を継続して提供する
 3. Where 外部通信が禁止されている, the Voice Chat Web App shall 音声・テキストデータを外部へ送信しない
-4. If 外部通信が発生する可能性がある状態に遷移する場合, the Voice Chat Web App shall 事前にユーザーへ通知して同意を求める
-5. The Voice Chat Web App shall ローカルに保存された対話データをユーザーが削除できる
+4. The Voice Chat Web App shall ローカルに保存された対話データをユーザーが削除できる
 
 ### Requirement 2: セッション開始・停止と権限
 **Objective:** As a ユーザー, I want 対話セッションを開始・停止できること, so that 必要なときだけ音声対話を行える
@@ -105,23 +104,12 @@
 4. While セッションが停止中, the Voice Chat Web App shall 音声入力の取得と自動再生を行わない
 5. The Voice Chat Web App shall ブラウザの自動再生制約により発話が開始できない場合に案内を表示する
 
-### Requirement 11: 低遅延の体感品質
-**Objective:** As a ユーザー, I want 応答が遅すぎないこと, so that 会話が自然に続く
-
-#### Acceptance Criteria
-1. The Voice Chat Web App shall 応答開始までの遅延を計測し可視化できる
-2. While 通常の利用条件下, the Voice Chat Web App shall ユーザー発話終了から応答開始までの遅延が許容範囲に収まるよう維持する
-3. If 応答開始までの遅延が許容範囲を超えたとき, the Voice Chat Web App shall ユーザーに通知する
-4. The Voice Chat Web App shall 遅延悪化時に原因を切り分けできるよう処理区間の計測結果を保持する
-5. The Voice Chat Web App shall 低遅延のための動作モード変更に対応できる
-
-### Requirement 12: ローカル通信境界の厳密化
+### Requirement 11: ローカル通信境界の厳密化
 **Objective:** As a 運用者, I want 通信がローカル境界内に限定されること, so that 外部流出のリスクを避けられる
 
 #### Acceptance Criteria
-1. The Voice Chat Web App shall 通信のエンドポイントがローカルホストのみであることを保証する
+1. The Voice Chat Web App shall 通信のエンドポイントが IPv4 のプライベートアドレス（RFC1918）および localhost（127.0.0.0/8）に限定されることを保証する
 2. Where 外向き通信が無効化されている, the Voice Chat Web App shall 外部ネットワークへの送信を行わない
 3. If 外向き通信が検出されたとき, the Voice Chat Web App shall ただちに通知し動作を停止できる
-4. The Voice Chat Web App shall ローカル以外の宛先への通信が発生しないよう構成される
-5. The Voice Chat Web App shall 通信境界に関する設定をユーザーが確認できる
-
+4. The Voice Chat Web App shall RFC1918 と localhost（127.0.0.0/8）以外の宛先への通信が発生しないよう構成される
+5. The Voice Chat Web App shall 通信境界に関する設定（RFC1918 + localhost のみ）をユーザーが確認できる

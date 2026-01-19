@@ -6,9 +6,9 @@
 対象ユーザーはローカル環境で安全に音声対話を行いたい利用者であり、運用者は遅延やエラーの観測性を確保したい。既存コードはなく、新規のローカル・オーケストレータとブラウザクライアントで構成する。
 
 ### Goals
-- ローカル完結の音声対話（1.x, 12.x）
+- ローカル完結の音声対話（1.x, 11.x）
 - ハンズフリー入力、全二重、割り込み（3.x, 5.x）
-- 低遅延で状態が分かるUIと回復性（6.x, 7.x, 11.x）
+- 状態が分かるUIと回復性（6.x, 7.x）
 
 ### Non-Goals
 - ブラウザ非アクティブ/バックグラウンドでの常時待受
@@ -73,9 +73,9 @@ graph TB
 |-------|------------------|-----------------|-------|
 | Frontend / CLI | Web Audio API, WebSocket | 音声I/O、双方向通信 | AudioWorkletを主経路、ユーザー操作でAudioContextを開始 |
 | Backend / Services | Node.js LTS + TypeScript | ローカルオーケストレータ | API/WS境界とセッション管理 |
-| Data / Storage | In-memory + Local file (TBD) | セッション/ログ | 永続化は最小限 |
+| Data / Storage | In-memory + Local file (opt-in) | セッション/ログ | 保持期限と削除APIを用意 |
 | Messaging / Events | WebSocket (RFC6455) | 制御/音声チャンク | MVPはWS一本化 |
-| Infrastructure / Runtime | Localhost, Optional Docker | ローカル隔離 | 外部送信禁止 |
+| Infrastructure / Runtime | Localhost / RFC1918, Optional Docker | ローカル隔離 | RFC1918 + localhost のみ通信 |
 | ASR | whisper.cpp (latest stable) | ローカル音声認識 | アダプタ経由 |
 | LLM | llama.cpp server (latest stable) | ローカル推論 | OpenAI互換JSON |
 | TTS | VOICEVOX Engine (latest stable) | 日本語TTS | 24kHz出力前提 |
@@ -141,7 +141,7 @@ stateDiagram-v2
 
 | Requirement | Summary | Components | Interfaces | Flows |
 |-------------|---------|------------|------------|-------|
-| 1.1, 1.2, 1.3, 1.4, 1.5 | ローカル完結とデータ境界 | BoundaryGuard, Orchestrator, SessionStore | WS API, Policy Config | 音声入力〜応答再生 |
+| 1.1, 1.2, 1.3, 1.4 | ローカル完結とデータ境界 | BoundaryGuard, Orchestrator, SessionStore | WS API, Policy Config | 音声入力〜応答再生 |
 | 2.1, 2.2, 2.3, 2.4, 2.5 | セッション開始/停止 | UI, AudioCapture, Orchestrator | WS API | 音声入力〜応答再生 |
 | 3.1, 3.2, 3.3, 3.4, 3.5 | ハンズフリー入力 | AudioCapture | AudioCapture API | 音声入力〜応答再生 |
 | 4.1, 4.2, 4.3, 4.4, 4.5 | ASR/LLM/TTSパイプライン | Orchestrator, ASRAdapter, LLMAdapter, TTSAdapter | Adapter Service API | 音声入力〜応答再生 |
@@ -151,26 +151,60 @@ stateDiagram-v2
 | 8.1, 8.2, 8.3, 8.4, 8.5 | 観測性 | Metrics, Orchestrator | Metrics API | 音声入力〜応答再生 |
 | 9.1, 9.2, 9.3, 9.4, 9.5 | 双方向通信 | WSClient, Orchestrator | WS API | 音声入力〜応答再生 |
 | 10.1, 10.2, 10.3, 10.4, 10.5 | 開始/停止UI | UI, AudioPlayback | UI Events | 音声入力〜応答再生 |
-| 11.1, 11.2, 11.3, 11.4, 11.5 | 低遅延品質 | Metrics, Orchestrator | Metrics API | 音声入力〜応答再生 |
-| 12.1, 12.2, 12.3, 12.4, 12.5 | 通信境界 | BoundaryGuard, Orchestrator | Policy Config | 音声入力〜応答再生 |
+| 11.1, 11.2, 11.3, 11.4, 11.5 | 通信境界 | BoundaryGuard, Orchestrator, VoiceChatUI | Policy Config | 音声入力〜応答再生 |
 
 ## Components and Interfaces
 
 ### Component Summary
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies (P0/P1) | Contracts |
 |-----------|--------------|--------|--------------|--------------------------|-----------|
-| VoiceChatUI | Browser UI | 状態表示と操作 | 2.1, 2.4, 6.1, 10.1 | SessionState (P0) | State |
+| VoiceChatUI | Browser UI | 状態表示と操作 | 2.1, 2.4, 6.1, 10.1, 11.5 | SessionState (P0) | State |
 | AudioCapture | Browser Audio | VADと音声取得 | 3.1, 3.2, 3.3 | AudioWorklet (P0) | Service, State |
 | AudioPlayback | Browser Audio | 応答再生と停止 | 5.1, 10.3 | AudioContext (P0) | State |
 | WSClient | Browser Net | 双方向通信 | 9.1, 9.2 | WebSocket (P0) | API, Event |
 | Orchestrator | Local Core | セッション制御/パイプライン統合 | 2.3, 4.1, 5.2 | Adapters (P0) | Service, Event |
+| SessionStore | Local Core | セッション/履歴の保持 | 1.4, 4.5 | LocalStorage (P1) | Service, State |
 | ASRAdapter | Local Adapter | ASR統合 | 4.1 | ASRService (P0) | Service |
 | LLMAdapter | Local Adapter | LLM統合 | 4.2 | LLMService (P0) | Service |
 | TTSAdapter | Local Adapter | TTS統合 | 4.3, 5.2 | TTSService (P0) | Service |
-| BoundaryGuard | Local Policy | 外部送信防止 | 1.3, 12.1 | Config (P0) | State |
-| Metrics | Local Ops | 遅延/イベント計測 | 8.1, 11.1 | Orchestrator (P0) | State |
+| BoundaryGuard | Local Policy | 外部送信防止 | 1.3, 11.1, 11.2, 11.4, 11.5 | Config (P0) | State |
+| Metrics | Local Ops | イベント計測 | 8.1, 8.2, 8.3 | Orchestrator (P0) | State |
 
 ### ブラウザ層
+
+#### VoiceChatUI
+| Field | Detail |
+|-------|--------|
+| Intent | セッション状態と通信境界の表示、開始/停止操作 |
+| Requirements | 2.1, 2.4, 6.1, 10.1, 11.5 |
+
+**Responsibilities & Constraints**
+- セッション状態（待機/収録/処理/再生）を表示
+- 通信境界の範囲（RFC1918 + localhost のみ）を表示
+- 開始/停止操作を提供
+
+**Dependencies**
+- Inbound: WSClient — サーバ状態イベント (P0)
+- Outbound: WSClient — 開始/停止イベント (P0)
+- External: None
+
+**Contracts**: Service [ ] / API [ ] / Event [x] / Batch [ ] / State [x]
+
+##### State Management
+```typescript
+type UIStatus = {
+  sessionState: "idle" | "listening" | "thinking" | "speaking";
+  boundaryScope: BoundaryScope;
+};
+```
+- Preconditions: サーバから境界情報を受信済み
+- Postconditions: UIに境界範囲が表示される
+- Invariants: boundaryScope はセッション中に変化しない
+
+**Implementation Notes**
+- Integration: 接続確立時に `BOUNDARY_STATUS` を取得
+- Validation: 未取得時は「不明」として表示
+- Risks: 境界情報の受信遅延
 
 #### AudioCapture
 | Field | Detail |
@@ -279,6 +313,7 @@ interface AudioPlaybackService {
 ```typescript
 type SessionId = string;
 type GenerationId = string;
+type BoundaryScope = "localhost" | "rfc1918";
 
 type ClientEvent =
   | { type: "START_SESSION"; sessionId: SessionId }
@@ -294,6 +329,7 @@ type ServerEvent =
   | { type: "ASSISTANT_STOPPED"; sessionId: SessionId; generationId: GenerationId }
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "FINAL_TRANSCRIPT"; sessionId: SessionId; text: string }
+  | { type: "BOUNDARY_STATUS"; sessionId: SessionId; scope: BoundaryScope; allowedRanges: string[] }
   | { type: "ERROR"; sessionId: SessionId; code: ErrorCode; message: string }
   | { type: "PONG"; sessionId: SessionId; timestampMs: number };
 
@@ -350,15 +386,71 @@ interface OrchestratorService {
 - Validation: 状態遷移の整合性をチェック
 - Risks: 中断競合による再生誤り
 
+#### SessionStore
+| Field | Detail |
+|-------|--------|
+| Intent | セッションと履歴の保持、削除 |
+| Requirements | 1.4, 4.5 |
+
+**Responsibilities & Constraints**
+- セッション状態と履歴を保持（デフォルトはメモリ、永続化はオプトイン）
+- ユーザー削除操作でローカル保存データを完全削除
+- 保持期限と容量の上限を設定可能
+
+**Dependencies**
+- Inbound: Orchestrator — セッション更新 (P0)
+- Outbound: None
+- External: LocalStorage — ローカル保存 (P1)
+
+**Contracts**: Service [x] / API [ ] / Event [ ] / Batch [ ] / State [x]
+
+##### Service Interface
+```typescript
+type RetentionMode = "memory" | "local_file";
+
+type TranscriptEntry = {
+  timestampMs: number;
+  speaker: "user" | "assistant";
+  text: string;
+};
+
+type SessionRecord = {
+  sessionId: SessionId;
+  createdAt: number;
+  updatedAt: number;
+  transcripts: TranscriptEntry[];
+};
+
+interface SessionStoreService {
+  get(sessionId: SessionId): SessionRecord | undefined;
+  upsert(record: SessionRecord): void;
+  appendTranscript(sessionId: SessionId, entry: TranscriptEntry): void;
+  delete(sessionId: SessionId): void;
+  list(): SessionRecord[];
+  setRetention(mode: RetentionMode, ttlMs?: number): void;
+}
+```
+- Preconditions: sessionId が有効
+- Postconditions: 削除後はローカルに痕跡を残さない
+- Invariants: retention 設定はセッション単位で一貫
+
+**Implementation Notes**
+- Integration: 永続化は明示的に有効化された場合のみ
+- Validation: TTL/容量制限の設定値を検証
+- Risks: 長時間稼働時のストレージ肥大
+
 #### BoundaryGuard
 | Field | Detail |
 |-------|--------|
 | Intent | ローカル通信境界の保証 |
-| Requirements | 1.3, 12.1, 12.2, 12.4 |
+| Requirements | 1.3, 11.1, 11.2, 11.4, 11.5 |
 
 **Responsibilities & Constraints**
-- ローカルホスト以外への通信をブロック
+- RFC1918 と localhost 以外への通信をブロック
 - 外向き通信検知時の停止
+- 起動時に全エンドポイントが RFC1918/localhost であることを検証
+- 許可範囲は localhost と RFC1918 のプライベートレンジに限定
+- 境界設定の読み取りを提供（UI表示用）
 
 **Dependencies**
 - Inbound: Orchestrator — 送信前検査 (P0)
@@ -369,22 +461,28 @@ interface OrchestratorService {
 
 ##### Service Interface
 ```typescript
+type BoundaryPolicy = {
+  scope: BoundaryScope;
+  allowedRanges: string[];
+};
+
 type Endpoint = {
-  host: "localhost" | "127.0.0.1";
+  host: string;
   port: number;
 };
 
 interface BoundaryGuardService {
-  assertLocal(endpoint: Endpoint): void;
+  assertAllowed(endpoint: Endpoint): void;
+  getPolicy(): BoundaryPolicy;
   recordViolation(endpoint: Endpoint, reason: string): void;
 }
 ```
 - Preconditions: endpoint が指定される
-- Postconditions: 非ローカルなら例外
-- Invariants: 許可対象はローカルのみ
+- Postconditions: 非許可なら例外
+- Invariants: 許可対象は localhost と RFC1918 のみ
 
 **Implementation Notes**
-- Integration: アダプタ呼び出し直前に検査
+- Integration: 起動時検証 + アダプタ呼び出し直前に検査
 - Validation: 設定値の整合性
 - Risks: サービス側の設定逸脱
 
@@ -392,7 +490,7 @@ interface BoundaryGuardService {
 | Field | Detail |
 |-------|--------|
 | Intent | 遅延・イベントの計測 |
-| Requirements | 8.1, 8.2, 11.1 |
+| Requirements | 8.1, 8.2, 8.3 |
 
 **Responsibilities & Constraints**
 - 主要イベントと処理時間を記録
@@ -535,20 +633,24 @@ interface TTSService {
 - **Session**: セッション状態、generationId、開始/終了時刻
 - **Generation**: 応答生成単位（LLM/TTS）
 - **Transcript**: ASR結果（partial/final）
+- **RetentionPolicy**: 保存モード、保持期限、容量上限
 
 ### Logical Data Model
 **Structure Definition**:
 - Session { sessionId, state, activeGenerationId, startedAt, stoppedAt }
 - Generation { generationId, sessionId, status, createdAt }
 - MetricEvent { name, timestampMs, valueMs }
+- RetentionPolicy { mode, ttlMs, maxSessions }
 
 **Consistency & Integrity**:
 - Session は単一アクティブ generationId を保持
 - Generation は sessionId に従属
+- delete 操作は Session/Transcript を完全に削除
 
 ### Data Contracts & Integration
 - WebSocket イベントは `ClientEvent` / `ServerEvent` に準拠
 - 送受信は sessionId と generationId を必須
+- `BOUNDARY_STATUS` で通信境界（scope と許可範囲）を通知
 
 ## Error Handling
 
@@ -574,12 +676,12 @@ interface TTSService {
 ## Optional Sections
 
 ### Security Considerations
-- すべての通信をローカルホストに限定
+- すべての通信を RFC1918 と localhost（127.0.0.0/8）に限定
 - ログから音声/本文を除外
 - UIで録音中を明示
 
 ### Performance & Scalability
-- 低遅延目標はメトリクスで監視
+- パフォーマンスは実装後の計測結果に基づきチューニングする
 - モデル負荷に応じて縮退モードを検討
 
 ## Supporting References (Optional)
