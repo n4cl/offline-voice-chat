@@ -47,7 +47,7 @@ func TestAcceptWSRejectsNonWebSocket(t *testing.T) {
 
 	res := w.Result()
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.StatusCode)
+	if res.StatusCode != http.StatusUpgradeRequired {
+		t.Fatalf("expected status %d, got %d", http.StatusUpgradeRequired, res.StatusCode)
 	}
 }
