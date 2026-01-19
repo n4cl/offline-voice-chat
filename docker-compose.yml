@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    environment:
+      BACKEND_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    ports:
+      - "5173:80"
+  mock-asr:
+    build:
+      context: .
+      dockerfile: docker/mock-asr/Dockerfile
+    environment:
+      ASR_ADDR: ":9001"
+    ports:
+      - "9001:9001"
+  mock-llm:
+    build:
+      context: .
+      dockerfile: docker/mock-llm/Dockerfile
+    environment:
+      LLM_ADDR: ":9002"
+    ports:
+      - "9002:9002"
+  mock-tts:
+    build:
+      context: .
+      dockerfile: docker/mock-tts/Dockerfile
+    environment:
+      TTS_ADDR: ":9003"
+    ports:
+      - "9003:9003"
