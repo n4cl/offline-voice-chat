@@ -1,0 +1,12 @@
+root = "."
+tmp_dir = ".air"
+
+[build]
+  cmd = "go build -o ./.air/server ./cmd/server"
+  bin = ".air/server"
+  include_ext = ["go"]
+  exclude_dir = [".air", "vendor"]
+  exclude_regex = ["_test\\.go"]
+
+[log]
+  time = true
