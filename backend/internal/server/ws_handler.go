@@ -4,7 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"sync/atomic"
 
@@ -27,22 +28,48 @@ func NewWSHandler(policy BoundaryPolicy, sessions *SessionManager) *WSHandler {
 func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ip := remoteIP(r.RemoteAddr)
 	origin := r.Header.Get("Origin")
-	log.Printf("ws connect remoteAddr=%s ip=%v origin=%q", r.RemoteAddr, ip, origin)
+	slog.Info(
+		"ws_connect",
+		"event", "ws_connect",
+		"remoteAddr", r.RemoteAddr,
+		"ip", formatIP(ip),
+		"origin", origin,
+	)
 	if !h.policy.AllowsIP(ip) {
-		log.Printf("ws forbidden remoteAddr=%s ip=%v origin=%q", r.RemoteAddr, ip, origin)
+		slog.Warn(
+			"ws_forbidden",
+			"event", "ws_forbidden",
+			"remoteAddr", r.RemoteAddr,
+			"ip", formatIP(ip),
+			"origin", origin,
+		)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	conn, err := AcceptWS(w, r)
 	if err != nil {
-		log.Printf("ws accept failed remoteAddr=%s ip=%v origin=%q err=%v", r.RemoteAddr, ip, origin, err)
+		slog.Error(
+			"ws_accept_failed",
+			"event", "ws_accept_failed",
+			"remoteAddr", r.RemoteAddr,
+			"ip", formatIP(ip),
+			"origin", origin,
+			"err", err,
+		)
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	connID := h.nextConnectionID()
-	log.Printf("ws accepted connId=%s ip=%v origin=%q scope=%s", connID, ip, origin, h.policy.ScopeForIP(ip))
+	slog.Info(
+		"ws_accepted",
+		"event", "ws_accepted",
+		"connId", connID,
+		"ip", formatIP(ip),
+		"origin", origin,
+		"scope", h.policy.ScopeForIP(ip),
+	)
 	boundaryEvent := ServerEvent{
 		Type:          "BOUNDARY_STATUS",
 		SessionID:     connID,
@@ -58,12 +85,19 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if lastSessionID != "" {
 				h.sessions.MarkDisconnected(lastSessionID)
 			}
-			log.Printf("ws read error connId=%s sessionId=%s err=%v", connID, lastSessionID, err)
+			slog.Error(
+				"ws_read_error",
+				"event", "ws_read_error",
+				"connId", connID,
+				"sessionId", lastSessionID,
+				"err", err,
+			)
 			return
 		}
 		if clientEvent.SessionID != "" {
 			lastSessionID = clientEvent.SessionID
 		}
+		logClientEvent(connID, clientEvent)
 
 		serverEvents, err := h.sessions.Handle(clientEvent)
 		if err != nil {
@@ -106,7 +140,49 @@ func readClientEvent(ctx context.Context, conn *websocket.Conn) (ClientEvent, er
 	if err := json.Unmarshal(data, &event); err != nil {
 		return ClientEvent{}, fmt.Errorf("invalid event")
 	}
+	if event.Type == "AUDIO_CHUNK" && event.Chunk == nil {
+		return ClientEvent{}, fmt.Errorf("missing chunk")
+	}
+	if event.SessionID == "" && event.Chunk != nil && event.Chunk.SessionID != "" {
+		event.SessionID = event.Chunk.SessionID
+	}
 	return event, nil
+}
+
+func logClientEvent(connID string, event ClientEvent) {
+	if event.Chunk != nil {
+		slog.Info(
+			"ws_client_event",
+			"event", "ws_client_event",
+			"connId", connID,
+			"type", event.Type,
+			"sessionId", event.SessionID,
+			"generationId", event.GenerationID,
+			"timestampMs", event.TimestampMs,
+			"chunkSequence", event.Chunk.Sequence,
+			"chunkTimestampMs", event.Chunk.TimestampMs,
+			"chunkFormat", event.Chunk.Format,
+			"chunkSampleRate", event.Chunk.SampleRate,
+			"chunkChannels", event.Chunk.Channels,
+		)
+		return
+	}
+	slog.Info(
+		"ws_client_event",
+		"event", "ws_client_event",
+		"connId", connID,
+		"type", event.Type,
+		"sessionId", event.SessionID,
+		"generationId", event.GenerationID,
+		"timestampMs", event.TimestampMs,
+	)
+}
+
+func formatIP(ip net.IP) string {
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }
 
 func writeServerEvent(ctx context.Context, conn *websocket.Conn, event ServerEvent) error {

@@ -21,7 +21,7 @@ export type ClientEvent =
   | { type: "USER_SPEECH_START"; sessionId: SessionId; timestampMs: number }
   | { type: "USER_SPEECH_END"; sessionId: SessionId; timestampMs: number }
   | { type: "CANCEL_RESPONSE"; sessionId: SessionId; generationId: GenerationId }
-  | { type: "AUDIO_CHUNK"; sessionId: SessionId; chunk: AudioChunk }
+  | { type: "AUDIO_CHUNK"; chunk: AudioChunk }
   | { type: "PING"; sessionId: SessionId; timestampMs: number };
 
 export type ServerEvent =
@@ -35,8 +35,17 @@ export type ServerEvent =
       scope: BoundaryScope;
       allowedRanges: string[];
     }
-  | { type: "ERROR"; sessionId: SessionId; code: string; message: string }
+  | { type: "ERROR"; sessionId: SessionId; code: ErrorCode; message: string }
   | { type: "PONG"; sessionId: SessionId; timestampMs: number };
+
+export type ErrorCode =
+  | "PERMISSION_DENIED"
+  | "DEVICE_UNAVAILABLE"
+  | "ASR_FAILED"
+  | "LLM_FAILED"
+  | "TTS_FAILED"
+  | "CHANNEL_DISCONNECTED"
+  | "UNKNOWN";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed" | "reconnecting";
 
@@ -134,7 +143,6 @@ export class WSClient {
     const sessionId = chunk.sessionId || this.requireSession();
     this.sendEvent({
       type: "AUDIO_CHUNK",
-      sessionId,
       chunk: { ...chunk, sessionId },
     });
   }

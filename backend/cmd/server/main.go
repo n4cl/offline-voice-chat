@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -9,12 +9,18 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	addr := envOrDefault("BACKEND_ADDR", ":8080")
 
 	h := server.NewMux()
-	log.Printf("backend listening on %s", addr)
+	slog.Info("backend_listening", "event", "backend_listening", "addr", addr)
 	if err := http.ListenAndServe(addr, h); err != nil {
-		log.Fatal(err)
+		slog.Error("backend_listen_failed", "event", "backend_listen_failed", "err", err)
+		os.Exit(1)
 	}
 }
 

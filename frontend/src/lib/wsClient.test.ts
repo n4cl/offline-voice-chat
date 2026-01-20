@@ -163,7 +163,6 @@ describe("WSClient", () => {
     expect(socket.sent).toEqual([
       JSON.stringify({
         type: "AUDIO_CHUNK",
-        sessionId: "session-1",
         chunk: {
           sessionId: "session-1",
           sequence: 1,

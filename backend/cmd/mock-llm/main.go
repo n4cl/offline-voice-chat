@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -9,11 +9,17 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	addr := envOrDefault("LLM_ADDR", ":9002")
 	h := mockservice.NewHandler("llm")
-	log.Printf("mock llm listening on %s", addr)
+	slog.Info("mock_llm_listening", "event", "mock_llm_listening", "addr", addr)
 	if err := http.ListenAndServe(addr, h); err != nil {
-		log.Fatal(err)
+		slog.Error("mock_llm_listen_failed", "event", "mock_llm_listen_failed", "err", err)
+		os.Exit(1)
 	}
 }
 
