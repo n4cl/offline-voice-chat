@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sync/atomic"
 
@@ -25,18 +26,23 @@ func NewWSHandler(policy BoundaryPolicy, sessions *SessionManager) *WSHandler {
 
 func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ip := remoteIP(r.RemoteAddr)
+	origin := r.Header.Get("Origin")
+	log.Printf("ws connect remoteAddr=%s ip=%v origin=%q", r.RemoteAddr, ip, origin)
 	if !h.policy.AllowsIP(ip) {
+		log.Printf("ws forbidden remoteAddr=%s ip=%v origin=%q", r.RemoteAddr, ip, origin)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	conn, err := AcceptWS(w, r)
 	if err != nil {
+		log.Printf("ws accept failed remoteAddr=%s ip=%v origin=%q err=%v", r.RemoteAddr, ip, origin, err)
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	connID := h.nextConnectionID()
+	log.Printf("ws accepted connId=%s ip=%v origin=%q scope=%s", connID, ip, origin, h.policy.ScopeForIP(ip))
 	boundaryEvent := ServerEvent{
 		Type:          "BOUNDARY_STATUS",
 		SessionID:     connID,
@@ -52,6 +58,7 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if lastSessionID != "" {
 				h.sessions.MarkDisconnected(lastSessionID)
 			}
+			log.Printf("ws read error connId=%s sessionId=%s err=%v", connID, lastSessionID, err)
 			return
 		}
 		if clientEvent.SessionID != "" {
