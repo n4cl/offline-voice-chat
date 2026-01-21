@@ -20,9 +20,16 @@ const resolveWebSocketUrl = () => {
   return `${protocol}//${host}:8080/ws`;
 };
 
+const createSessionId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 export default function App() {
   const [sessionActive, setSessionActive] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId] = useState<string>(() => createSessionId());
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [boundary, setBoundary] = useState<BoundaryView | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -43,20 +50,19 @@ export default function App() {
       onConnectionChange: (state) => setConnectionState(state),
       onError: (error) => setLastError(error.message),
     });
+    client.setSessionId(sessionId);
+    client.connect();
     clientRef.current = client;
     return () => client.disconnect();
-  }, [wsUrl]);
+  }, [sessionId, wsUrl]);
 
   const handleStart = () => {
     const client = clientRef.current;
     if (!client) {
       return;
     }
-    client.connect();
-    const id = sessionId ?? crypto.randomUUID();
-    setSessionId(id);
     setSessionActive(true);
-    client.startSession(id);
+    client.startSession(sessionId);
   };
 
   const handleStop = () => {

@@ -175,4 +175,38 @@ describe("WSClient", () => {
       }),
     ]);
   });
+
+  it("sends text input events with session context", () => {
+    const client = new WSClient({
+      url: "ws://localhost/ws",
+      websocketFactory: createMockSocket,
+    });
+
+    client.connect();
+    const socket = MockWebSocket.instances[0];
+    socket.open();
+
+    client.setSessionId("session-1");
+    client.sendTextInput("hello");
+
+    expect(socket.sent).toContain(
+      JSON.stringify({ type: "TEXT_INPUT", sessionId: "session-1", text: "hello" }),
+    );
+  });
+
+  it("does not send empty text input", () => {
+    const client = new WSClient({
+      url: "ws://localhost/ws",
+      websocketFactory: createMockSocket,
+    });
+
+    client.connect();
+    const socket = MockWebSocket.instances[0];
+    socket.open();
+
+    client.setSessionId("session-1");
+    client.sendTextInput("   ");
+
+    expect(socket.sent).toEqual([]);
+  });
 });

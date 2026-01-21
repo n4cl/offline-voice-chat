@@ -20,6 +20,7 @@ export type ClientEvent =
   | { type: "STOP_SESSION"; sessionId: SessionId }
   | { type: "USER_SPEECH_START"; sessionId: SessionId; timestampMs: number }
   | { type: "USER_SPEECH_END"; sessionId: SessionId; timestampMs: number }
+  | { type: "TEXT_INPUT"; sessionId: SessionId; text: string }
   | { type: "CANCEL_RESPONSE"; sessionId: SessionId; generationId: GenerationId }
   | { type: "AUDIO_CHUNK"; chunk: AudioChunk }
   | { type: "PING"; sessionId: SessionId; timestampMs: number };
@@ -110,6 +111,10 @@ export class WSClient {
     this.setState("closed");
   }
 
+  setSessionId(sessionId: SessionId) {
+    this.sessionId = sessionId;
+  }
+
   startSession(sessionId: SessionId) {
     this.sessionId = sessionId;
     this.sessionActive = true;
@@ -132,6 +137,14 @@ export class WSClient {
   sendUserSpeechEnd(timestampMs: number) {
     const sessionId = this.requireSession();
     this.sendEvent({ type: "USER_SPEECH_END", sessionId, timestampMs });
+  }
+
+  sendTextInput(text: string) {
+    if (text.trim().length === 0) {
+      return;
+    }
+    const sessionId = this.requireSession();
+    this.sendEvent({ type: "TEXT_INPUT", sessionId, text });
   }
 
   cancelResponse(generationId: GenerationId) {
