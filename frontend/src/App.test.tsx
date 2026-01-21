@@ -35,19 +35,33 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: /offline voice chat/i })).toBeInTheDocument();
   });
 
-  it("connects on page load and sets a session id", () => {
+  it("shows connection and session status labels", () => {
     render(<App />);
-    const client = wsInstances[0];
-    expect(client.connect).toHaveBeenCalled();
-    expect(client.setSessionId).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/接続:\s*Idle/i)).toBeInTheDocument();
+    expect(screen.getByText(/状態:\s*Idle/i)).toBeInTheDocument();
   });
 
-  it("uses the same session id when starting a session", () => {
+  it("renders chat log entries for assistant and user", () => {
+    render(<App />);
+    expect(
+      screen.getByRole("region", { name: /チャットログ/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /こんにちは。音声でもテキストでも、ここから対話できます。/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/今日は面接対策をしたいです。/i),
+    ).toBeInTheDocument();
+  });
+
+  it("starts a session using the same session id from the voice button", () => {
     render(<App />);
     const client = wsInstances[0];
     const sessionId = client.setSessionId.mock.calls[0][0];
 
-    fireEvent.click(screen.getByRole("button", { name: /start/i }));
+    fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
 
     expect(client.startSession).toHaveBeenCalledWith(sessionId);
   });
