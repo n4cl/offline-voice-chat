@@ -9,6 +9,7 @@
 - ローカル完結の音声対話（1.x, 11.x）
 - ハンズフリー入力、全二重、割り込み（3.x, 5.x）
 - 状態が分かるUIと回復性（6.x, 7.x）
+- 音声入力とテキスト入力の併用（12.x）
 
 ### Non-Goals
 - ブラウザ非アクティブ/バックグラウンドでの常時待受
@@ -33,6 +34,7 @@
 graph TB
   subgraph Browser
     UI
+    TextInput
     AudioCapture
     AudioPlayback
     WSClient
@@ -53,6 +55,7 @@ graph TB
   end
 
   UI --> WSClient
+  TextInput --> WSClient
   AudioCapture --> WSClient
   WSClient --> Orchestrator
   Orchestrator --> SessionStore
@@ -82,6 +85,13 @@ graph TB
 
 ## System Flows
 
+ブラウザはページロード時にWS接続を確立し、テキスト入力は音声セッションの開始/停止に関わらず利用可能とする。音声入力はユーザー操作でマイクを有効化したときのみ開始する。
+
+**用語の整理**
+- **Connection**: ブラウザとローカルバックエンドのWS接続単位（再接続時に再確立される）
+- **SessionId**: 接続確立時にクライアントで生成して保持し、TEXT_INPUT/音声イベントの関連付けに使う論理ID
+- **Voice Session**: マイク権限取得後に開始される音声入力セッション（開始/停止で明示的に制御）
+
 ### 音声入力〜応答再生
 ```mermaid
 sequenceDiagram
@@ -100,6 +110,25 @@ sequenceDiagram
   Browser->>Orchestrator: USER_SPEECH_END
   Orchestrator->>ASR: Transcribe
   ASR-->>Orchestrator: Transcript
+  Orchestrator->>LLM: Generate
+  LLM-->>Orchestrator: ResponseText
+  Orchestrator->>TTS: Synthesize
+  TTS-->>Orchestrator: Audio
+  Orchestrator-->>Browser: ASSISTANT_SPEAKING + AUDIO
+  Browser-->>User: Play Audio
+```
+
+### テキスト入力〜応答再生
+```mermaid
+sequenceDiagram
+  participant User
+  participant Browser
+  participant Orchestrator
+  participant LLM
+  participant TTS
+
+  User->>Browser: Type & Send
+  Browser->>Orchestrator: TEXT_INPUT
   Orchestrator->>LLM: Generate
   LLM-->>Orchestrator: ResponseText
   Orchestrator->>TTS: Synthesize
@@ -127,6 +156,7 @@ sequenceDiagram
 stateDiagram-v2
   [*] --> IDLE
   IDLE --> LISTENING: USER_SPEECH_START
+  IDLE --> THINKING: TEXT_INPUT
   LISTENING --> THINKING: USER_SPEECH_END
   THINKING --> SPEAKING: AUDIO_READY
   SPEAKING --> LISTENING: USER_SPEECH_START
@@ -136,6 +166,7 @@ stateDiagram-v2
   IDLE --> ERROR: ERROR
   ERROR --> IDLE: RESET
 ```
+※ 本図は **Voice Session** の状態遷移を示す。TEXT_INPUT は音声セッションの有無に関わらず利用可能で、送信時は THINKING → SPEAKING → IDLE の遷移を想定する。
 
 ## Requirements Traceability
 
@@ -152,6 +183,7 @@ stateDiagram-v2
 | 9.1, 9.2, 9.3, 9.4, 9.5 | 双方向通信 | WSClient, Orchestrator | WS API | 音声入力〜応答再生 |
 | 10.1, 10.2, 10.3, 10.4, 10.5 | 開始/停止UI | UI, AudioPlayback | UI Events | 音声入力〜応答再生 |
 | 11.1, 11.2, 11.3, 11.4, 11.5 | 通信境界 | BoundaryGuard, Orchestrator, VoiceChatUI | Policy Config | 音声入力〜応答再生 |
+| 12.1, 12.2, 12.3, 12.4, 12.5 | テキスト入力併用 | VoiceChatUI, WSClient, Orchestrator | WS API | テキスト入力〜応答再生 |
 
 ## Components and Interfaces
 
@@ -159,6 +191,7 @@ stateDiagram-v2
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies (P0/P1) | Contracts |
 |-----------|--------------|--------|--------------|--------------------------|-----------|
 | VoiceChatUI | Browser UI | 状態表示と操作 | 2.1, 2.4, 6.1, 10.1, 11.5 | SessionState (P0) | State |
+| TextInput | Browser UI | テキスト入力 | 12.1, 12.2, 12.3, 12.4, 12.5 | WSClient (P0) | Event |
 | AudioCapture | Browser Audio | VADと音声取得 | 3.1, 3.2, 3.3 | AudioWorklet (P0) | Service, State |
 | AudioPlayback | Browser Audio | 応答再生と停止 | 5.1, 10.3 | AudioContext (P0) | State |
 | WSClient | Browser Net | 双方向通信 | 9.1, 9.2 | WebSocket (P0) | API, Event |
@@ -182,6 +215,8 @@ stateDiagram-v2
 - セッション状態（待機/収録/処理/再生）を表示
 - 通信境界の範囲（RFC1918 + localhost のみ）を表示
 - 開始/停止操作を提供
+- テキスト入力と音声入力の両方が同等に使えることを明示
+- 接続状態と音声セッション状態を分離して扱う
 
 **Dependencies**
 - Inbound: WSClient — サーバ状態イベント (P0)
@@ -205,6 +240,25 @@ type UIStatus = {
 - Integration: 接続確立時に `BOUNDARY_STATUS` を取得
 - Validation: 未取得時は「不明」として表示
 - Risks: 境界情報の受信遅延
+
+#### TextInput
+| Field | Detail |
+|-------|--------|
+| Intent | テキスト入力の送信 |
+| Requirements | 12.1, 12.2, 12.3, 12.4, 12.5 |
+
+**Responsibilities & Constraints**
+- テキスト入力を `TEXT_INPUT` としてWS送信する
+- 音声セッションの有無に関わらず送信可能とする
+- 空文字列は送信しない
+- 音声セッション開始中は入力欄をロックし、送信を防止する
+
+**Dependencies**
+- Inbound: VoiceChatUI — 送信操作 (P0)
+- Outbound: WSClient — TEXT_INPUT 送信 (P0)
+- External: None
+
+**Contracts**: Service [ ] / API [ ] / Event [x] / Batch [ ] / State [x]
 
 #### AudioCapture
 | Field | Detail |
@@ -301,6 +355,8 @@ interface AudioPlaybackService {
 **Responsibilities & Constraints**
 - 音声チャンクとイベントを同一チャネルで送受信
 - 切断時の再接続と通知
+- テキスト入力はWSイベント（TEXT_INPUT）として送信する
+- ページロード時に接続を開始する
 
 **Dependencies**
 - Inbound: Orchestrator — サーバイベント (P0)
@@ -320,6 +376,7 @@ type ClientEvent =
   | { type: "STOP_SESSION"; sessionId: SessionId }
   | { type: "USER_SPEECH_START"; sessionId: SessionId; timestampMs: number }
   | { type: "USER_SPEECH_END"; sessionId: SessionId; timestampMs: number }
+  | { type: "TEXT_INPUT"; sessionId: SessionId; text: string }
   | { type: "CANCEL_RESPONSE"; sessionId: SessionId; generationId: GenerationId }
   | { type: "AUDIO_CHUNK"; chunk: AudioChunk }
   | { type: "PING"; sessionId: SessionId; timestampMs: number };
@@ -350,6 +407,7 @@ type ErrorCode =
 - Integration: 再接続時に状態を同期
 - Validation: メッセージ型をバリデート
 - Risks: 再接続時の状態不整合
+- Notes: sessionId はページロード時に生成し、WS再接続時も同一IDを利用する
 
 ### ローカルオーケストレータ層
 
@@ -362,6 +420,9 @@ type ErrorCode =
 **Responsibilities & Constraints**
 - セッション状態遷移と generationId 管理
 - CANCEL_RESPONSE による中断処理
+- TEXT_INPUT はASRを経由せず、ASR完了相当としてLLM/TTSへ進める
+- TEXT_INPUT は音声セッションの状態に関わらず受理する
+- TEXT_INPUT を受信したら user の transcript をSessionStoreへ追加する
 
 **Dependencies**
 - Inbound: WSClient — クライアントイベント (P0)
@@ -385,6 +446,7 @@ interface OrchestratorService {
 - Integration: アダプタのI/FでASR/LLM/TTSを統合
 - Validation: 状態遷移の整合性をチェック
 - Risks: 中断競合による再生誤り
+- Notes: TEXT_INPUT 受信時に sessionId が未存在なら新規セッションを初期化して処理を継続する
 
 #### SessionStore
 | Field | Detail |
@@ -451,6 +513,7 @@ interface SessionStoreService {
 - 起動時に全エンドポイントが RFC1918/localhost であることを検証
 - 許可範囲は localhost と RFC1918 のプライベートレンジに限定
 - 境界設定の読み取りを提供（UI表示用）
+- 入力経路（音声/テキスト）に関わらず外部サービス呼び出し前に必ず適用する
 
 **Dependencies**
 - Inbound: Orchestrator — 送信前検査 (P0)

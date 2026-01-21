@@ -14,15 +14,15 @@
 3. Where 外部通信が禁止されている, the Voice Chat Web App shall 音声・テキストデータを外部へ送信しない
 4. The Voice Chat Web App shall ローカルに保存された対話データをユーザーが削除できる
 
-### Requirement 2: セッション開始・停止と権限
-**Objective:** As a ユーザー, I want 対話セッションを開始・停止できること, so that 必要なときだけ音声対話を行える
+### Requirement 2: 音声セッション開始・停止と権限
+**Objective:** As a ユーザー, I want 音声セッションを開始・停止できること, so that 必要なときだけ音声対話を行える
 
 #### Acceptance Criteria
-1. When ユーザーが開始を指示したとき, the Voice Chat Web App shall マイク利用権限の取得を行う
+1. When ユーザーが音声入力の開始を指示したとき, the Voice Chat Web App shall マイク利用権限の取得を行う
 2. If マイク利用権限が拒否されたとき, the Voice Chat Web App shall 権限付与の手順を提示する
-3. When セッションが開始されたとき, the Voice Chat Web App shall 音声入力の受付を開始する
-4. When ユーザーが停止を指示したとき, the Voice Chat Web App shall 音声入力の受付と応答生成を停止する
-5. The Voice Chat Web App shall セッションが停止中に音声入力を取得しない
+3. When 音声セッションが開始されたとき, the Voice Chat Web App shall 音声入力の受付を開始する
+4. When ユーザーが音声セッションの停止を指示したとき, the Voice Chat Web App shall 音声入力の受付と音声由来の応答生成を停止する
+5. The Voice Chat Web App shall 音声セッションが停止中に音声入力を取得しない
 
 ### Requirement 3: ハンズフリー音声入力（VAD含む）
 **Objective:** As a ユーザー, I want ハンズフリーで発話できること, so that 操作せずに対話を進められる
@@ -94,15 +94,15 @@
 4. If 双方向通信が切断されたとき, the Voice Chat Web App shall ユーザーに通知し再接続を試みる
 5. The Voice Chat Web App shall 双方向通信の再接続後にセッションの継続または再開を可能にする
 
-### Requirement 10: 開始/停止UIと自動再生制約対応
-**Objective:** As a ユーザー, I want 明確な開始/停止操作ができること, so that ブラウザの制約下でも安全に音声対話を開始できる
+### Requirement 10: 音声開始/停止UIと自動再生制約対応
+**Objective:** As a ユーザー, I want 明確な音声開始/停止操作ができること, so that ブラウザの制約下でも安全に音声対話を開始できる
 
 #### Acceptance Criteria
-1. The Voice Chat Web App shall セッション開始のための明確な操作手段を提供する
-2. When ユーザーが開始操作を行ったとき, the Voice Chat Web App shall 音声入出力の初期化を実行する
-3. When ユーザーが停止操作を行ったとき, the Voice Chat Web App shall 音声入力と応答再生を停止する
-4. While セッションが停止中, the Voice Chat Web App shall 音声入力の取得と自動再生を行わない
-5. The Voice Chat Web App shall ブラウザの自動再生制約により発話が開始できない場合に案内を表示する
+1. The Voice Chat Web App shall 音声セッション開始のための明確な操作手段を提供する
+2. When ユーザーが音声開始操作を行ったとき, the Voice Chat Web App shall 音声入出力の初期化を実行する
+3. When ユーザーが音声停止操作を行ったとき, the Voice Chat Web App shall 音声入力と音声応答再生を停止する
+4. While 音声セッションが停止中, the Voice Chat Web App shall 音声入力の取得と自動再生を行わない
+5. The Voice Chat Web App shall ブラウザの自動再生制約により音声再生が開始できない場合に案内を表示する
 
 ### Requirement 11: ローカル通信境界の厳密化
 **Objective:** As a 運用者, I want 通信がローカル境界内に限定されること, so that 外部流出のリスクを避けられる
@@ -113,3 +113,13 @@
 3. If 外向き通信が検出されたとき, the Voice Chat Web App shall ただちに通知し動作を停止できる
 4. The Voice Chat Web App shall RFC1918 と localhost（127.0.0.0/8）以外の宛先への通信が発生しないよう構成される
 5. The Voice Chat Web App shall 通信境界に関する設定（RFC1918 + localhost のみ）をユーザーが確認できる
+
+### Requirement 12: テキスト入力の併用（音声と同等）
+**Objective:** As a ユーザー, I want テキストでも入力できること, so that 音声が使えない環境や検証時にも対話を継続できる
+
+#### Acceptance Criteria
+1. The Voice Chat Web App shall 音声入力に加えてテキスト入力手段を提供する
+2. When ユーザーがテキスト入力を送信したとき, the Voice Chat Web App shall 音声入力と同等の対話パイプラインで応答を生成する
+3. The Voice Chat Web App shall テキスト入力と音声入力の両方が同等に利用可能であることを明示する
+4. The Voice Chat Web App shall 音声セッションが停止中にテキスト入力を利用可能にする
+5. While 音声セッションが開始中, the Voice Chat Web App shall テキスト入力をロックして送信を防止する
