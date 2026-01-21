@@ -112,7 +112,6 @@
 2. Where 外向き通信が無効化されている, the Voice Chat Web App shall 外部ネットワークへの送信を行わない
 3. If 外向き通信が検出されたとき, the Voice Chat Web App shall ただちに通知し動作を停止できる
 4. The Voice Chat Web App shall RFC1918 と localhost（127.0.0.0/8）以外の宛先への通信が発生しないよう構成される
-5. The Voice Chat Web App shall 通信境界に関する設定（RFC1918 + localhost のみ）をユーザーが確認できる
 
 ### Requirement 12: テキスト入力の併用（音声と同等）
 **Objective:** As a ユーザー, I want テキストでも入力できること, so that 音声が使えない環境や検証時にも対話を継続できる

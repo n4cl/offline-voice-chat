@@ -182,7 +182,7 @@ stateDiagram-v2
 | 8.1, 8.2, 8.3, 8.4, 8.5 | 観測性 | Metrics, Orchestrator | Metrics API | 音声入力〜応答再生 |
 | 9.1, 9.2, 9.3, 9.4, 9.5 | 双方向通信 | WSClient, Orchestrator | WS API | 音声入力〜応答再生 |
 | 10.1, 10.2, 10.3, 10.4, 10.5 | 開始/停止UI | UI, AudioPlayback | UI Events | 音声入力〜応答再生 |
-| 11.1, 11.2, 11.3, 11.4, 11.5 | 通信境界 | BoundaryGuard, Orchestrator, VoiceChatUI | Policy Config | 音声入力〜応答再生 |
+| 11.1, 11.2, 11.3, 11.4 | 通信境界 | BoundaryGuard, Orchestrator | Policy Config | 音声入力〜応答再生 |
 | 12.1, 12.2, 12.3, 12.4, 12.5 | テキスト入力併用 | VoiceChatUI, WSClient, Orchestrator | WS API | テキスト入力〜応答再生 |
 
 ## Components and Interfaces
@@ -190,7 +190,7 @@ stateDiagram-v2
 ### Component Summary
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies (P0/P1) | Contracts |
 |-----------|--------------|--------|--------------|--------------------------|-----------|
-| VoiceChatUI | Browser UI | 状態表示と操作 | 2.1, 2.4, 6.1, 10.1, 11.5 | SessionState (P0) | State |
+| VoiceChatUI | Browser UI | 状態表示と操作 | 2.1, 2.4, 6.1, 10.1 | SessionState (P0) | State |
 | TextInput | Browser UI | テキスト入力 | 12.1, 12.2, 12.3, 12.4, 12.5 | WSClient (P0) | Event |
 | AudioCapture | Browser Audio | VADと音声取得 | 3.1, 3.2, 3.3 | AudioWorklet (P0) | Service, State |
 | AudioPlayback | Browser Audio | 応答再生と停止 | 5.1, 10.3 | AudioContext (P0) | State |
@@ -200,7 +200,7 @@ stateDiagram-v2
 | ASRAdapter | Local Adapter | ASR統合 | 4.1 | ASRService (P0) | Service |
 | LLMAdapter | Local Adapter | LLM統合 | 4.2 | LLMService (P0) | Service |
 | TTSAdapter | Local Adapter | TTS統合 | 4.3, 5.2 | TTSService (P0) | Service |
-| BoundaryGuard | Local Policy | 外部送信防止 | 1.3, 11.1, 11.2, 11.4, 11.5 | Config (P0) | State |
+| BoundaryGuard | Local Policy | 外部送信防止 | 1.3, 11.1, 11.2, 11.4 | Config (P0) | State |
 | Metrics | Local Ops | イベント計測 | 8.1, 8.2, 8.3 | Orchestrator (P0) | State |
 
 ### ブラウザ層
@@ -208,12 +208,11 @@ stateDiagram-v2
 #### VoiceChatUI
 | Field | Detail |
 |-------|--------|
-| Intent | セッション状態と通信境界の表示、開始/停止操作 |
-| Requirements | 2.1, 2.4, 6.1, 10.1, 11.5 |
+| Intent | セッション状態の表示、開始/停止操作 |
+| Requirements | 2.1, 2.4, 6.1, 10.1 |
 
 **Responsibilities & Constraints**
 - セッション状態（待機/収録/処理/再生）を表示
-- 通信境界の範囲（RFC1918 + localhost のみ）を表示
 - 開始/停止操作を提供
 - テキスト入力と音声入力の両方が同等に使えることを明示
 - 接続状態と音声セッション状態を分離して扱う
@@ -229,17 +228,14 @@ stateDiagram-v2
 ```typescript
 type UIStatus = {
   sessionState: "idle" | "listening" | "thinking" | "speaking";
-  boundaryScope: BoundaryScope;
 };
 ```
-- Preconditions: サーバから境界情報を受信済み
-- Postconditions: UIに境界範囲が表示される
-- Invariants: boundaryScope はセッション中に変化しない
+- Preconditions: サーバから状態イベントを受信済み
+- Postconditions: UIに状態が表示される
+- Invariants: sessionState はサーバ状態と整合
 
 **Implementation Notes**
-- Integration: 接続確立時に `BOUNDARY_STATUS` を取得
-- Validation: 未取得時は「不明」として表示
-- Risks: 境界情報の受信遅延
+- Risks: 状態イベント遅延による表示のズレ
 
 #### TextInput
 | Field | Detail |
@@ -310,6 +306,7 @@ interface AudioCaptureService {
 - Integration: AudioWorklet でVADを実装
 - Validation: マイク権限の有無を確認
 - Risks: 対応ブラウザの制限
+- Notes: 音声はチャンクで逐次送信（低遅延）
 
 #### AudioPlayback
 | Field | Detail |
@@ -357,6 +354,7 @@ interface AudioPlaybackService {
 - 切断時の再接続と通知
 - テキスト入力はWSイベント（TEXT_INPUT）として送信する
 - ページロード時に接続を開始する
+ - 音声チャンクは **バイナリフレーム** で送信する（低遅延・低オーバーヘッド）
 
 **Dependencies**
 - Inbound: Orchestrator — サーバイベント (P0)
@@ -369,7 +367,6 @@ interface AudioPlaybackService {
 ```typescript
 type SessionId = string;
 type GenerationId = string;
-type BoundaryScope = "localhost" | "rfc1918";
 
 type ClientEvent =
   | { type: "START_SESSION"; sessionId: SessionId }
@@ -386,7 +383,6 @@ type ServerEvent =
   | { type: "ASSISTANT_STOPPED"; sessionId: SessionId; generationId: GenerationId }
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "FINAL_TRANSCRIPT"; sessionId: SessionId; text: string }
-  | { type: "BOUNDARY_STATUS"; sessionId: SessionId; scope: BoundaryScope; allowedRanges: string[] }
   | { type: "ERROR"; sessionId: SessionId; code: ErrorCode; message: string }
   | { type: "PONG"; sessionId: SessionId; timestampMs: number };
 
@@ -396,6 +392,7 @@ type ErrorCode =
   | "ASR_FAILED"
   | "LLM_FAILED"
   | "TTS_FAILED"
+  | "BOUNDARY_VIOLATION"
   | "CHANNEL_DISCONNECTED"
   | "UNKNOWN";
 ```
@@ -408,6 +405,13 @@ type ErrorCode =
 - Validation: メッセージ型をバリデート
 - Risks: 再接続時の状態不整合
 - Notes: sessionId はページロード時に生成し、WS再接続時も同一IDを利用する
+
+##### Transport Encoding
+- 音声は **チャンク単位でストリーミング送信**する
+- 送信順序:
+  1. JSON `AUDIO_CHUNK` (メタデータのみ。`data` は空/省略)
+  2. 直後の **バイナリフレーム** に raw PCM を格納
+- Base64によるサイズ増を避ける
 
 ### ローカルオーケストレータ層
 
@@ -505,14 +509,13 @@ interface SessionStoreService {
 | Field | Detail |
 |-------|--------|
 | Intent | ローカル通信境界の保証 |
-| Requirements | 1.3, 11.1, 11.2, 11.4, 11.5 |
+| Requirements | 1.3, 11.1, 11.2, 11.4 |
 
 **Responsibilities & Constraints**
 - RFC1918 と localhost 以外への通信をブロック
 - 外向き通信検知時の停止
 - 起動時に全エンドポイントが RFC1918/localhost であることを検証
 - 許可範囲は localhost と RFC1918 のプライベートレンジに限定
-- 境界設定の読み取りを提供（UI表示用）
 - 入力経路（音声/テキスト）に関わらず外部サービス呼び出し前に必ず適用する
 
 **Dependencies**
@@ -524,6 +527,8 @@ interface SessionStoreService {
 
 ##### Service Interface
 ```typescript
+type BoundaryScope = "localhost" | "rfc1918";
+
 type BoundaryPolicy = {
   scope: BoundaryScope;
   allowedRanges: string[];
@@ -536,7 +541,6 @@ type Endpoint = {
 
 interface BoundaryGuardService {
   assertAllowed(endpoint: Endpoint): void;
-  getPolicy(): BoundaryPolicy;
   recordViolation(endpoint: Endpoint, reason: string): void;
 }
 ```
@@ -558,6 +562,7 @@ interface BoundaryGuardService {
 **Responsibilities & Constraints**
 - 主要イベントと処理時間を記録
 - 音声/本文は保存しない
+- 計測結果は **最小のUI表示** に反映できるようにする（開発用）
 
 **Dependencies**
 - Inbound: Orchestrator — イベント通知 (P0)
@@ -713,7 +718,6 @@ interface TTSService {
 ### Data Contracts & Integration
 - WebSocket イベントは `ClientEvent` / `ServerEvent` に準拠
 - 送受信は sessionId と generationId を必須
-- `BOUNDARY_STATUS` で通信境界（scope と許可範囲）を通知
 
 ## Error Handling
 
@@ -725,6 +729,7 @@ interface TTSService {
 - **User Errors**: 権限拒否・デバイス未接続 → 操作ガイド
 - **System Errors**: ASR/LLM/TTS失敗 → 再試行案内
 - **State Errors**: セッション不整合 → セッション再初期化
+- **Boundary Violations**: 外向き通信を検知したら `ERROR (BOUNDARY_VIOLATION)` を通知し、セッションを停止
 
 ### Monitoring
 - ERROR イベントを Metrics に記録
