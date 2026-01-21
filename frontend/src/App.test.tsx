@@ -41,18 +41,13 @@ describe("App", () => {
     expect(screen.getByText(/状態:\s*Idle/i)).toBeInTheDocument();
   });
 
-  it("renders chat log entries for assistant and user", () => {
+  it("renders chat log empty state placeholder", () => {
     render(<App />);
     expect(
       screen.getByRole("region", { name: /チャットログ/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /こんにちは。音声でもテキストでも、ここから対話できます。/i,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/今日は面接対策をしたいです。/i),
+      screen.getByText(/まだ会話がありません。/i),
     ).toBeInTheDocument();
   });
 

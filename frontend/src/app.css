@@ -184,6 +184,26 @@ body {
   flex: 1;
 }
 
+.chat-empty {
+  border-radius: 28px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: rgba(20, 24, 28, 0.6);
+  padding: 28px 24px;
+  text-align: center;
+  color: var(--mist-200);
+  box-shadow: var(--shadow-soft);
+}
+
+.chat-empty p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.chat-empty p + p {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
 .chat-bubble {
   border-radius: 26px;
   border: 1px solid rgba(255, 255, 255, 0.1);

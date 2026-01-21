@@ -19,30 +19,7 @@ type ChatMessage = {
   status: string;
 };
 
-const INITIAL_MESSAGES: ChatMessage[] = [
-  {
-    id: "m1",
-    speaker: "assistant",
-    text: "こんにちは。音声でもテキストでも、ここから対話できます。話したいことがあれば気軽にどうぞ。",
-    timestamp: "00:02",
-    status: "再生待機",
-  },
-  {
-    id: "m2",
-    speaker: "user",
-    text: "今日は面接対策をしたいです。どんな質問が来そうか一緒に整理できますか？",
-    timestamp: "00:12",
-    status: "送信済み",
-  },
-  {
-    id: "m3",
-    speaker: "assistant",
-    text:
-      "了解しました。まずは自己紹介と志望動機の構成を作り、想定質問リストを一緒に作成しましょう。これまでの経歴や強みを教えてください。",
-    timestamp: "00:24",
-    status: "音声生成済み",
-  },
-];
+const INITIAL_MESSAGES: ChatMessage[] = [];
 
 const UI_STATE_LABEL: Record<UIState, string> = {
   idle: "Idle",
@@ -207,22 +184,29 @@ export default function App() {
         </header>
 
         <section className="chat-log" aria-label="チャットログ">
-          {messages.map((message, index) => (
-            <article
-              key={message.id}
-              className={`chat-bubble chat-bubble--${message.speaker} fade-up`}
-              style={{ animationDelay: `${index * 80}ms` }}
-            >
-              <p className="chat-role">
-                {message.speaker === "assistant" ? "Assistant" : "You"}
-              </p>
-              <p className="chat-text">{message.text}</p>
-              <div className="chat-meta">
-                <span>{message.timestamp}</span>
-                <span>{message.status}</span>
-              </div>
-            </article>
-          ))}
+          {messages.length === 0 ? (
+            <div className="chat-empty" role="status">
+              <p>まだ会話がありません。</p>
+              <p>音声入力を開始するか、テキストで話しかけてみましょう。</p>
+            </div>
+          ) : (
+            messages.map((message, index) => (
+              <article
+                key={message.id}
+                className={`chat-bubble chat-bubble--${message.speaker} fade-up`}
+                style={{ animationDelay: `${index * 80}ms` }}
+              >
+                <p className="chat-role">
+                  {message.speaker === "assistant" ? "Assistant" : "You"}
+                </p>
+                <p className="chat-text">{message.text}</p>
+                <div className="chat-meta">
+                  <span>{message.timestamp}</span>
+                  <span>{message.status}</span>
+                </div>
+              </article>
+            ))
+          )}
         </section>
 
         <footer className="app-footer" aria-label="フッター">
