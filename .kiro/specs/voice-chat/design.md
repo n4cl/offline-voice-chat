@@ -164,7 +164,12 @@ stateDiagram-v2
   CANCELING --> LISTENING: CANCEL_DONE
   state ERROR
   IDLE --> ERROR: ERROR
+  IDLE --> ERROR: BOUNDARY_VIOLATION
   ERROR --> IDLE: RESET
+  LISTENING --> ERROR: BOUNDARY_VIOLATION
+  THINKING --> ERROR: BOUNDARY_VIOLATION
+  SPEAKING --> ERROR: BOUNDARY_VIOLATION
+  CANCELING --> ERROR: BOUNDARY_VIOLATION
 ```
 ※ 本図は **Voice Session** の状態遷移を示す。TEXT_INPUT は音声セッションの有無に関わらず利用可能で、送信時は THINKING → SPEAKING → IDLE の遷移を想定する。
 
@@ -280,13 +285,18 @@ type SampleRateHz = 16000 | 24000 | 48000;
 
 type AudioFormat = "pcm16" | "wav";
 
-type AudioChunk = {
+type AudioChunkMeta = {
   sessionId: string;
   sequence: number;
   timestampMs: number;
   format: AudioFormat;
   sampleRateHz: SampleRateHz;
   channels: 1 | 2;
+  byteLength: number;
+};
+
+type AudioChunkPayload = {
+  meta: AudioChunkMeta;
   data: ArrayBuffer;
 };
 
@@ -295,7 +305,7 @@ interface AudioCaptureService {
   stop(): void;
   onSpeechStart(cb: (timestampMs: number) => void): void;
   onSpeechEnd(cb: (timestampMs: number) => void): void;
-  onChunk(cb: (chunk: AudioChunk) => void): void;
+  onChunk(cb: (chunk: AudioChunkPayload) => void): void;
 }
 ```
 - Preconditions: セッションが開始済み
@@ -354,7 +364,7 @@ interface AudioPlaybackService {
 - 切断時の再接続と通知
 - テキスト入力はWSイベント（TEXT_INPUT）として送信する
 - ページロード時に接続を開始する
- - 音声チャンクは **バイナリフレーム** で送信する（低遅延・低オーバーヘッド）
+- 音声チャンクは **バイナリフレーム** で送信する（低遅延・低オーバーヘッド）
 
 **Dependencies**
 - Inbound: Orchestrator — サーバイベント (P0)
@@ -375,7 +385,7 @@ type ClientEvent =
   | { type: "USER_SPEECH_END"; sessionId: SessionId; timestampMs: number }
   | { type: "TEXT_INPUT"; sessionId: SessionId; text: string }
   | { type: "CANCEL_RESPONSE"; sessionId: SessionId; generationId: GenerationId }
-  | { type: "AUDIO_CHUNK"; chunk: AudioChunk }
+  | { type: "AUDIO_CHUNK"; chunk: AudioChunkMeta }
   | { type: "PING"; sessionId: SessionId; timestampMs: number };
 
 type ServerEvent =
@@ -383,6 +393,7 @@ type ServerEvent =
   | { type: "ASSISTANT_STOPPED"; sessionId: SessionId; generationId: GenerationId }
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "FINAL_TRANSCRIPT"; sessionId: SessionId; text: string }
+  | { type: "METRICS_UPDATE"; sessionId: SessionId; metrics: MetricSnapshot }
   | { type: "ERROR"; sessionId: SessionId; code: ErrorCode; message: string }
   | { type: "PONG"; sessionId: SessionId; timestampMs: number };
 
@@ -409,7 +420,7 @@ type ErrorCode =
 ##### Transport Encoding
 - 音声は **チャンク単位でストリーミング送信**する
 - 送信順序:
-  1. JSON `AUDIO_CHUNK` (メタデータのみ。`data` は空/省略)
+  1. JSON `AUDIO_CHUNK` (メタデータのみ。`byteLength` を含む)
   2. 直後の **バイナリフレーム** に raw PCM を格納
 - Base64によるサイズ増を避ける
 
@@ -580,6 +591,15 @@ type MetricEvent = {
   valueMs?: number;
 };
 
+type MetricSnapshot = {
+  generationId: GenerationId;
+  asrMs?: number;
+  llmMs?: number;
+  ttsMs?: number;
+  totalMs?: number;
+  timestampMs: number;
+};
+
 interface MetricsService {
   record(event: MetricEvent): void;
 }
@@ -592,6 +612,9 @@ interface MetricsService {
 - Integration: ローカル保存のみ
 - Validation: PII除外
 - Risks: 計測過剰による遅延
+- Notes: Orchestrator がステージ完了ごとに `METRICS_UPDATE` を通知する
+- Notes: UIは `currentGenerationId` を保持し、該当IDのメトリクスが揃った時のみ表示を更新する
+- Notes: `METRICS_UPDATE` は ASR/LLM/TTS 完了ごとに送信する
 
 ### アダプタ層
 
@@ -671,6 +694,7 @@ interface LLMService {
 **Responsibilities & Constraints**
 - 応答テキストを音声化
 - 24kHz出力の前提を吸収
+- 出力フォーマットは未決定（TBD）。TTSAdapter がブラウザ再生可能形式へ正規化する
 
 **Dependencies**
 - Inbound: Orchestrator — 合成要求 (P0)
@@ -718,6 +742,7 @@ interface TTSService {
 ### Data Contracts & Integration
 - WebSocket イベントは `ClientEvent` / `ServerEvent` に準拠
 - 送受信は sessionId と generationId を必須
+- `AUDIO_CHUNK` はメタデータ、直後のバイナリフレームが実データ
 
 ## Error Handling
 
