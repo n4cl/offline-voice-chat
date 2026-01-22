@@ -78,3 +78,36 @@ func TestSessionManagerTextInputCreatesSession(t *testing.T) {
 		t.Fatalf("expected AUDIO_READY event")
 	}
 }
+
+func TestSessionManagerTextInputEmitsMetricsUpdate(t *testing.T) {
+	manager := NewSessionManager()
+
+	events, err := manager.Handle(ClientEvent{
+		Type:      "TEXT_INPUT",
+		SessionID: "s-metrics",
+		Text:      "hello",
+	})
+	if err != nil {
+		t.Fatalf("text input: %v", err)
+	}
+
+	var metricsEvent *ServerEvent
+	for i := range events {
+		if events[i].Type == "METRICS_UPDATE" {
+			metricsEvent = &events[i]
+			break
+		}
+	}
+	if metricsEvent == nil {
+		t.Fatalf("expected METRICS_UPDATE event")
+	}
+	if metricsEvent.Metrics == nil {
+		t.Fatalf("expected metrics payload")
+	}
+	if metricsEvent.Metrics.GenerationID == "" {
+		t.Fatalf("expected metrics generation id")
+	}
+	if metricsEvent.Metrics.TotalMs < 0 {
+		t.Fatalf("expected non-negative totalMs")
+	}
+}

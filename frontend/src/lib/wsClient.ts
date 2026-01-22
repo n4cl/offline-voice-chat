@@ -15,6 +15,15 @@ export type AudioChunk = {
   data: ArrayBuffer;
 };
 
+export type MetricSnapshot = {
+  generationId: GenerationId;
+  asrMs?: number;
+  llmMs?: number;
+  ttsMs?: number;
+  totalMs: number;
+  timestampMs: number;
+};
+
 export type ClientEvent =
   | { type: "START_SESSION"; sessionId: SessionId }
   | { type: "STOP_SESSION"; sessionId: SessionId }
@@ -30,6 +39,7 @@ export type ServerEvent =
   | { type: "ASSISTANT_STOPPED"; sessionId: SessionId; generationId: GenerationId }
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "FINAL_TRANSCRIPT"; sessionId: SessionId; text: string }
+  | { type: "METRICS_UPDATE"; sessionId: SessionId; metrics: MetricSnapshot }
   | {
       type: "AUDIO_READY";
       sessionId: SessionId;

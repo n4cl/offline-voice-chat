@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./app.css";
-import { type ConnectionState, type ServerEvent, type WSClient } from "./lib/wsClient";
+import { type ConnectionState, type MetricSnapshot, type ServerEvent, type WSClient } from "./lib/wsClient";
 import { acquireWSClient, releaseWSClient } from "./lib/wsClientManager";
 
 type BoundaryView = {
@@ -128,6 +128,16 @@ const resolveErrorHint = (code: string) => {
 const formatTimestamp = () =>
   new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+const formatMetric = (value?: number) => {
+  if (value === undefined || Number.isNaN(value)) {
+    return "--";
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}s`;
+  }
+  return `${Math.round(value)}ms`;
+};
+
 const decodeBase64 = (payload: string) => {
   if (payload.length === 0) {
     return new Uint8Array();
@@ -167,6 +177,7 @@ export default function App() {
   const [uiState, setUiState] = useState<UIState>("idle");
   const [messages, setMessages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
   const [textInput, setTextInput] = useState("");
+  const [metrics, setMetrics] = useState<MetricSnapshot | null>(null);
   const clientRef = useRef<WSClient | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -195,6 +206,9 @@ export default function App() {
         }
         if (event.type === "FINAL_TRANSCRIPT") {
           setUiState("thinking");
+        }
+        if (event.type === "METRICS_UPDATE") {
+          setMetrics(event.metrics);
         }
         if (event.type === "ASSISTANT_SPEAKING") {
           setUiState("speaking");
@@ -521,6 +535,9 @@ export default function App() {
   const boundaryLabel = boundary
     ? `${boundary.scope} (${boundary.allowedRanges.join(", ")})`
     : "Unknown";
+  const metricsLabel = metrics
+    ? `ASR ${formatMetric(metrics.asrMs)} | LLM ${formatMetric(metrics.llmMs)} | TTS ${formatMetric(metrics.ttsMs)} | Total ${formatMetric(metrics.totalMs)}`
+    : "ASR -- | LLM -- | TTS -- | Total --";
 
   return (
     <main className="app-shell">
@@ -687,7 +704,7 @@ export default function App() {
           </section>
           <p className="input-hint">テキストと音声はどちらも同等に利用できます。</p>
           <div className="footer-meta-row">
-            <span className="metrics-hint">ASR 320ms | LLM 1.1s | TTS 240ms</span>
+            <span className="metrics-hint">{metricsLabel}</span>
             <span className="footer-meta">Boundary: {boundaryLabel}</span>
           </div>
         </footer>

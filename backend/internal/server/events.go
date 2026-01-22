@@ -32,4 +32,14 @@ type ServerEvent struct {
 	AudioBase64   string   `json:"audioBase64,omitempty"`
 	MimeType      string   `json:"mimeType,omitempty"`
 	Filename      string   `json:"filename,omitempty"`
+	Metrics       *MetricSnapshot `json:"metrics,omitempty"`
+}
+
+type MetricSnapshot struct {
+	GenerationID string `json:"generationId"`
+	ASRMs        *int64 `json:"asrMs,omitempty"`
+	LLMMs        *int64 `json:"llmMs,omitempty"`
+	TTSMs        *int64 `json:"ttsMs,omitempty"`
+	TotalMs      int64  `json:"totalMs"`
+	TimestampMs  int64  `json:"timestampMs"`
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 type SessionState string
@@ -105,6 +106,7 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 			session = &Session{ID: event.SessionID, NextGeneration: 1}
 			m.sessions[event.SessionID] = session
 		}
+		startedAt := time.Now()
 		session.State = StateThinking
 		session.ActiveGenerationID = fmt.Sprintf("gen-%d", session.NextGeneration)
 		session.NextGeneration++
@@ -113,6 +115,18 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 			Text:    event.Text,
 		})
 		generationID := session.ActiveGenerationID
+		llmDoneAt := time.Now()
+		ttsDoneAt := time.Now()
+		llmMs := llmDoneAt.Sub(startedAt).Milliseconds()
+		ttsMs := ttsDoneAt.Sub(llmDoneAt).Milliseconds()
+		totalMs := ttsDoneAt.Sub(startedAt).Milliseconds()
+		metrics := MetricSnapshot{
+			GenerationID: generationID,
+			LLMMs:        &llmMs,
+			TTSMs:        &ttsMs,
+			TotalMs:      totalMs,
+			TimestampMs:  ttsDoneAt.UnixMilli(),
+		}
 		return []ServerEvent{
 			{
 				Type:         "ASSISTANT_SPEAKING",
@@ -126,6 +140,12 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 				AudioBase64:  silentWavBase64,
 				MimeType:     "audio/wav",
 				Filename:     "reply.wav",
+			},
+			{
+				Type:         "METRICS_UPDATE",
+				SessionID:    event.SessionID,
+				GenerationID: generationID,
+				Metrics:      &metrics,
 			},
 			{
 				Type:         "ASSISTANT_STOPPED",

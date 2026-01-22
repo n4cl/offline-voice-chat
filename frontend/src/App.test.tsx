@@ -71,6 +71,31 @@ describe("App", () => {
     expect(screen.getByText(/状態:\s*Idle/i)).toBeInTheDocument();
   });
 
+  it("updates metrics hint when metrics update event arrives", () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    act(() => {
+      client.options.onEvent?.({
+        type: "METRICS_UPDATE",
+        sessionId: "session-1",
+        metrics: {
+          generationId: "gen-1",
+          asrMs: 120,
+          llmMs: 340,
+          ttsMs: 560,
+          totalMs: 1020,
+          timestampMs: 12345,
+        },
+      });
+    });
+
+    expect(screen.getByText(/ASR 120ms/i)).toBeInTheDocument();
+    expect(screen.getByText(/LLM 340ms/i)).toBeInTheDocument();
+    expect(screen.getByText(/TTS 560ms/i)).toBeInTheDocument();
+    expect(screen.getByText(/Total 1.0s/i)).toBeInTheDocument();
+  });
+
   it("renders chat log empty state placeholder", () => {
     render(<App />);
     expect(
