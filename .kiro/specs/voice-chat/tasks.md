@@ -98,7 +98,7 @@
   - 会話履歴を保持して応答生成に利用する
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 5.3, 5.4_
 
-- [ ] 6.5 TEXT_INPUT 経路の処理と履歴反映を実装する
+- [x] 6.5 TEXT_INPUT 経路の処理と履歴反映を実装する
   - TEXT_INPUT を受信したら user transcript をSessionStoreに追加する
   - ASRを経由せずLLM/TTSへ進める
   - 音声セッション停止中でも処理できるようにする

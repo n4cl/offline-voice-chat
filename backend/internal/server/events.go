@@ -15,6 +15,7 @@ type ClientEvent struct {
 	SessionID    string      `json:"sessionId,omitempty"`
 	TimestampMs  int64       `json:"timestampMs,omitempty"`
 	GenerationID string      `json:"generationId,omitempty"`
+	Text         string      `json:"text,omitempty"`
 	Chunk        *AudioChunk `json:"chunk,omitempty"`
 }
 
@@ -28,4 +29,7 @@ type ServerEvent struct {
 	Code          string   `json:"code,omitempty"`
 	Message       string   `json:"message,omitempty"`
 	Text          string   `json:"text,omitempty"`
+	AudioBase64   string   `json:"audioBase64,omitempty"`
+	MimeType      string   `json:"mimeType,omitempty"`
+	Filename      string   `json:"filename,omitempty"`
 }

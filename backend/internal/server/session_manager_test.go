@@ -45,3 +45,36 @@ func TestSessionManagerLifecycle(t *testing.T) {
 		t.Fatalf("expected idle inactive session after stop")
 	}
 }
+
+func TestSessionManagerTextInputCreatesSession(t *testing.T) {
+	manager := NewSessionManager()
+
+	events, err := manager.Handle(ClientEvent{
+		Type:      "TEXT_INPUT",
+		SessionID: "s-text",
+		Text:      "hello",
+	})
+	if err != nil {
+		t.Fatalf("text input: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatalf("expected server events for text input")
+	}
+	if session, ok := manager.Get("s-text"); !ok {
+		t.Fatalf("expected session to be created")
+	} else if len(session.Transcripts) != 1 || session.Transcripts[0].Text != "hello" {
+		t.Fatalf("expected transcript to be recorded")
+	}
+	foundAudio := false
+	for _, event := range events {
+		if event.Type == "AUDIO_READY" {
+			foundAudio = true
+			if event.AudioBase64 == "" {
+				t.Fatalf("expected audio payload")
+			}
+		}
+	}
+	if !foundAudio {
+		t.Fatalf("expected AUDIO_READY event")
+	}
+}

@@ -22,6 +22,13 @@ type Session struct {
 	Connected          bool
 	ActiveGenerationID string
 	NextGeneration     int
+	Transcripts        []TranscriptEntry
+}
+
+type TranscriptEntry struct {
+	Speaker     string
+	Text        string
+	TimestampMs int64
 }
 
 type SessionManager struct {
@@ -90,6 +97,42 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 		session.ActiveGenerationID = fmt.Sprintf("gen-%d", session.NextGeneration)
 		session.NextGeneration++
 		return nil, nil
+	case "TEXT_INPUT":
+		if event.Text == "" {
+			return nil, fmt.Errorf("missing text")
+		}
+		if !exists {
+			session = &Session{ID: event.SessionID, NextGeneration: 1}
+			m.sessions[event.SessionID] = session
+		}
+		session.State = StateThinking
+		session.ActiveGenerationID = fmt.Sprintf("gen-%d", session.NextGeneration)
+		session.NextGeneration++
+		session.Transcripts = append(session.Transcripts, TranscriptEntry{
+			Speaker: "user",
+			Text:    event.Text,
+		})
+		generationID := session.ActiveGenerationID
+		return []ServerEvent{
+			{
+				Type:         "ASSISTANT_SPEAKING",
+				SessionID:    event.SessionID,
+				GenerationID: generationID,
+			},
+			{
+				Type:         "AUDIO_READY",
+				SessionID:    event.SessionID,
+				GenerationID: generationID,
+				AudioBase64:  silentWavBase64,
+				MimeType:     "audio/wav",
+				Filename:     "reply.wav",
+			},
+			{
+				Type:         "ASSISTANT_STOPPED",
+				SessionID:    event.SessionID,
+				GenerationID: generationID,
+			},
+		}, nil
 	case "CANCEL_RESPONSE":
 		if err := requireActiveSession(session); err != nil {
 			return nil, err
@@ -121,6 +164,8 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 		return nil, fmt.Errorf("unsupported event type")
 	}
 }
+
+const silentWavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="
 
 func (m *SessionManager) MarkDisconnected(sessionID string) {
 	m.mu.Lock()
