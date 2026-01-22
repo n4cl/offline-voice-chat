@@ -182,6 +182,32 @@ describe("App", () => {
     expect(input.value).toBe("");
   });
 
+  it("does not send text when IME composition is active", async () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "こんにちは" } });
+
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      isComposing: true,
+      nativeEvent: { isComposing: true },
+    });
+
+    expect(client.sendTextInput).not.toHaveBeenCalled();
+    expect(input.value).toBe("こんにちは");
+
+    fireEvent.compositionEnd(input);
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    expect(client.sendTextInput).toHaveBeenCalledWith("こんにちは");
+    expect(input.value).toBe("");
+  });
+
   it("scrolls to the bottom when a new message is sent", async () => {
     render(<App />);
     const bottomMarker = screen.getByTestId("chat-bottom") as HTMLDivElement;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import "./app.css";
 import { type ConnectionState, type MetricSnapshot, type ServerEvent, type WSClient } from "./lib/wsClient";
 import { acquireWSClient, releaseWSClient } from "./lib/wsClientManager";
@@ -525,6 +525,20 @@ export default function App() {
   };
 
   /**
+   * IME変換中のEnter送信を抑止しつつ、Enterで送信する。
+   */
+  const handleTextKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    const nativeEvent = event.nativeEvent as { isComposing?: boolean } | undefined;
+    if (event.isComposing || nativeEvent?.isComposing) {
+      return;
+    }
+    handleSendText();
+  };
+
+  /**
    * マイク入力を停止し、トラックを解放する。
    */
   const stopMicrophone = () => {
@@ -733,11 +747,7 @@ export default function App() {
               placeholder="お話してみましょう"
               value={textInput}
               onChange={(event) => setTextInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  handleSendText();
-                }
-              }}
+              onKeyDown={handleTextKeyDown}
               disabled={voiceActive}
             />
             <button
