@@ -525,9 +525,9 @@ export default function App() {
   };
 
   /**
-   * IME変換中のEnter送信を抑止しつつ、Enterで送信する。
+   * IME変換中のEnter送信を抑止しつつ、修飾キー+Enterで送信する。
    */
-  const handleTextKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const handleTextKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter") {
       return;
     }
@@ -535,7 +535,10 @@ export default function App() {
     if (event.isComposing || nativeEvent?.isComposing) {
       return;
     }
-    handleSendText();
+    if (event.metaKey || event.ctrlKey) {
+      event.preventDefault();
+      handleSendText();
+    }
   };
 
   /**
@@ -740,10 +743,10 @@ export default function App() {
             <label className="sr-only" htmlFor="chat-input">
               メッセージ
             </label>
-            <input
+            <textarea
               id="chat-input"
               className="chat-input"
-              type="text"
+              rows={1}
               placeholder="お話してみましょう"
               value={textInput}
               onChange={(event) => setTextInput(event.target.value)}

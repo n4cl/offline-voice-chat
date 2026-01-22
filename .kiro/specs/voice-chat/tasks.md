@@ -61,6 +61,11 @@
   - IME変換中のEnterでは送信しない
   - _Requirements: 12.1_
 
+- [x] 3.8 Enter改行と修飾キー送信を実装する
+  - Enterは改行
+  - macはCmd+Enterで送信、WindowsはCtrl+Enterで送信
+  - _Requirements: 12.1_
+
 - [ ] 4. 音声入力とVAD
 - [ ] 4.1 ハンズフリー音声入力と発話開始/終了検知を実装する
   - 音声入力中の連続入力に対応する

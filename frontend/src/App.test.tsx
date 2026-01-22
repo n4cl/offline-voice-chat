@@ -171,7 +171,7 @@ describe("App", () => {
     render(<App />);
     const client = wsInstances[0];
 
-    const input = screen.getByLabelText(/メッセージ/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "hello" } });
 
     await act(async () => {
@@ -186,7 +186,7 @@ describe("App", () => {
     render(<App />);
     const client = wsInstances[0];
 
-    const input = screen.getByLabelText(/メッセージ/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "こんにちは" } });
 
     fireEvent.compositionStart(input);
@@ -201,11 +201,47 @@ describe("App", () => {
 
     fireEvent.compositionEnd(input);
     await act(async () => {
-      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
     });
 
     expect(client.sendTextInput).toHaveBeenCalledWith("こんにちは");
     expect(input.value).toBe("");
+  });
+
+  it("sends text when Cmd+Enter or Ctrl+Enter is pressed", async () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "hello" } });
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    });
+
+    expect(client.sendTextInput).toHaveBeenCalledWith("hello");
+    expect(input.value).toBe("");
+
+    fireEvent.change(input, { target: { value: "world" } });
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    });
+
+    expect(client.sendTextInput).toHaveBeenCalledWith("world");
+  });
+
+  it("does not send text on Enter without modifiers", () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "line" } });
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(client.sendTextInput).not.toHaveBeenCalled();
+    expect(input.value).toBe("line");
   });
 
   it("scrolls to the bottom when a new message is sent", async () => {
