@@ -2,11 +2,13 @@ package server
 
 import "net"
 
+// BoundaryPolicy は許可されたローカルIP範囲を定義する。
 type BoundaryPolicy struct {
 	AllowedRanges []string
 	allowedNets   []*net.IPNet
 }
 
+// DefaultBoundaryPolicy はRFC1918+localhostの許可範囲を返す。
 func DefaultBoundaryPolicy() BoundaryPolicy {
 	policy := BoundaryPolicy{
 		AllowedRanges: []string{
@@ -26,6 +28,7 @@ func DefaultBoundaryPolicy() BoundaryPolicy {
 	return policy
 }
 
+// AllowsIP は指定IPが許可範囲内かを判定する。
 func (p BoundaryPolicy) AllowsIP(ip net.IP) bool {
 	if ip == nil {
 		return false
@@ -41,6 +44,7 @@ func (p BoundaryPolicy) AllowsIP(ip net.IP) bool {
 	return false
 }
 
+// ScopeForIP はIPに対応する境界スコープを返す。
 func (p BoundaryPolicy) ScopeForIP(ip net.IP) string {
 	if ip != nil && ip.IsLoopback() {
 		return "localhost"

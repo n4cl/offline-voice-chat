@@ -54,6 +54,9 @@ const CONNECTION_LABEL: Record<ConnectionState, string> = {
   reconnecting: "Reconnecting",
 };
 
+/**
+ * WS接続先を決定する。環境変数があれば優先し、なければローカルを使う。
+ */
 const resolveWebSocketUrl = () => {
   const envUrl = import.meta.env?.VITE_WS_ENDPOINT as string | undefined;
   if (envUrl) {
@@ -67,6 +70,9 @@ const resolveWebSocketUrl = () => {
   return `${protocol}//${host}:8080/ws`;
 };
 
+/**
+ * 会話セッションID（プロトコル上の sessionId）を生成する。
+ */
 const createSessionId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -97,6 +103,9 @@ const getConnectionTone = (state: ConnectionState) => {
   return "muted";
 };
 
+/**
+ * 低レベルエラーをユーザー向けメッセージに変換する。
+ */
 const resolveErrorMessage = (message: string) => {
   if (message === "websocket error") {
     return "WebSocket接続エラーが発生しました。サーバやURLを確認してください。";
@@ -104,6 +113,9 @@ const resolveErrorMessage = (message: string) => {
   return message;
 };
 
+/**
+ * エラー種別ごとの対処ヒントを返す。
+ */
 const resolveErrorHint = (code: string) => {
   switch (code) {
     case "PERMISSION_DENIED":
@@ -125,9 +137,15 @@ const resolveErrorHint = (code: string) => {
   }
 };
 
+/**
+ * チャット表示用の時刻フォーマット。
+ */
 const formatTimestamp = () =>
   new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+/**
+ * 任意のメトリクス値を表示用に整形する。
+ */
 const formatMetric = (value?: number) => {
   if (value === undefined || Number.isNaN(value)) {
     return "--";
@@ -138,6 +156,9 @@ const formatMetric = (value?: number) => {
   return `${Math.round(value)}ms`;
 };
 
+/**
+ * Base64文字列をバイト列へ変換する（ブラウザ/Node両対応）。
+ */
 const decodeBase64 = (payload: string) => {
   if (payload.length === 0) {
     return new Uint8Array();
@@ -158,6 +179,9 @@ const decodeBase64 = (payload: string) => {
   return new Uint8Array();
 };
 
+/**
+ * 応答生成中の仮メッセージを作成する。
+ */
 const createPendingAssistant = () => ({
   id: `assistant-${Date.now()}`,
   speaker: "assistant" as const,
@@ -168,7 +192,9 @@ const createPendingAssistant = () => ({
 });
 
 export default function App() {
-  const [sessionActive, setSessionActive] = useState(false);
+  // 音声入力状態（Voice State）
+  const [voiceActive, setVoiceActive] = useState(false);
+  // 会話セッションID（プロトコル上の sessionId）
   const [sessionId] = useState<string>(() => createSessionId());
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [boundary, setBoundary] = useState<BoundaryView | null>(null);
@@ -349,6 +375,9 @@ export default function App() {
     }
   }, [messages.length]);
 
+  /**
+   * マイク権限とストリームを取得する。
+   */
   const requestMicrophonePermission = async () => {
     if (micStreamRef.current) {
       return true;
@@ -380,6 +409,9 @@ export default function App() {
     }
   };
 
+  /**
+   * 音声再生のためにAudioContextを有効化する。
+   */
   const ensureAudioPlayback = async () => {
     if (typeof AudioContext === "undefined") {
       return true;
@@ -400,6 +432,9 @@ export default function App() {
     }
   };
 
+  /**
+   * メッセージ本文をクリップボードへコピーする。
+   */
   const handleCopyMessage = async (text: string) => {
     if (!navigator.clipboard?.writeText) {
       setNotice({ title: "コピー", message: "この環境ではコピーできません。" });
@@ -413,6 +448,9 @@ export default function App() {
     }
   };
 
+  /**
+   * 指定メッセージの音声を再生する。
+   */
   const handlePlayAudio = async (messageId: string) => {
     const target = audioRefs.current[messageId];
     if (!target) {
@@ -428,30 +466,39 @@ export default function App() {
     }
   };
 
+  /**
+   * エラー後の再試行（接続の再確立）を行う。
+   */
   const handleRetry = () => {
     setErrorState(null);
     const client = clientRef.current;
     if (client) {
       client.connect();
-      if (sessionActive) {
+      if (voiceActive) {
         client.startSession(sessionId);
       }
     }
   };
 
+  /**
+   * エラー時の安全終了（音声入力停止 + 会話セッション停止）。
+   */
   const handleSafeEnd = () => {
     const client = clientRef.current;
     stopMicrophone();
     if (client) {
       client.stopSession();
     }
-    setSessionActive(false);
+    setVoiceActive(false);
     setUiState("idle");
     setErrorState(null);
   };
 
+  /**
+   * テキスト入力を送信し、仮の応答メッセージを追加する。
+   */
   const handleSendText = () => {
-    if (sessionActive) {
+    if (voiceActive) {
       return;
     }
     const trimmed = textInput.trim();
@@ -477,6 +524,9 @@ export default function App() {
     setTextInput("");
   };
 
+  /**
+   * マイク入力を停止し、トラックを解放する。
+   */
   const stopMicrophone = () => {
     const stream = micStreamRef.current;
     if (!stream || typeof stream.getTracks !== "function") {
@@ -491,6 +541,9 @@ export default function App() {
     micStreamRef.current = null;
   };
 
+  /**
+   * 音声入力を開始する（権限取得 + 再生準備 + セッション開始）。
+   */
   const handleStart = async () => {
     const client = clientRef.current;
     if (!client) {
@@ -498,12 +551,12 @@ export default function App() {
     }
     const hasPermission = await requestMicrophonePermission();
     if (!hasPermission) {
-      setSessionActive(false);
+      setVoiceActive(false);
       setUiState("idle");
       return;
     }
     const playbackReady = await ensureAudioPlayback();
-    setSessionActive(true);
+    setVoiceActive(true);
     setUiState("listening");
     if (playbackReady) {
       setNotice(null);
@@ -511,6 +564,9 @@ export default function App() {
     client.startSession(sessionId);
   };
 
+  /**
+   * 音声入力を停止する（マイク停止 + セッション停止）。
+   */
   const handleStop = () => {
     const client = clientRef.current;
     if (!client) {
@@ -518,12 +574,12 @@ export default function App() {
     }
     stopMicrophone();
     client.stopSession();
-    setSessionActive(false);
+    setVoiceActive(false);
     setUiState("idle");
   };
 
   const handleVoiceToggle = () => {
-    if (sessionActive) {
+    if (voiceActive) {
       handleStop();
       return;
     }
@@ -682,24 +738,24 @@ export default function App() {
                   handleSendText();
                 }
               }}
-              disabled={sessionActive}
+              disabled={voiceActive}
             />
             <button
               className="send-button"
               type="button"
               onClick={handleSendText}
-              disabled={sessionActive}
+              disabled={voiceActive}
             >
               送信
             </button>
             <button
               className="voice-toggle"
               type="button"
-              aria-pressed={sessionActive}
+              aria-pressed={voiceActive}
               onClick={handleVoiceToggle}
             >
               <span className="voice-indicator" aria-hidden="true" />
-              {sessionActive ? "音声入力停止" : "音声入力開始"}
+              {voiceActive ? "音声入力停止" : "音声入力開始"}
             </button>
           </section>
           <p className="input-hint">テキストと音声はどちらも同等に利用できます。</p>

@@ -12,12 +12,14 @@ import (
 	"github.com/coder/websocket"
 )
 
+// WSHandler はWS接続の受付とイベントループを担う。
 type WSHandler struct {
 	sessions *SessionManager
 	policy   BoundaryPolicy
 	nextID   uint64
 }
 
+// NewWSHandler は境界ポリシーと会話セッション管理を受け取り初期化する。
 func NewWSHandler(policy BoundaryPolicy, sessions *SessionManager) *WSHandler {
 	if sessions == nil {
 		sessions = NewSessionManager()
@@ -25,6 +27,7 @@ func NewWSHandler(policy BoundaryPolicy, sessions *SessionManager) *WSHandler {
 	return &WSHandler{sessions: sessions, policy: policy}
 }
 
+// ServeHTTP はWS接続を受け付け、クライアントイベントを処理する。
 func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ip := remoteIP(r.RemoteAddr)
 	origin := r.Header.Get("Origin")

@@ -1,3 +1,4 @@
+/** 会話セッションID（プロトコル上の sessionId） */
 export type SessionId = string;
 export type GenerationId = string;
 export type BoundaryScope = "localhost" | "rfc1918";
@@ -106,6 +107,7 @@ export class WSClient {
     this.onConnectionChange = options.onConnectionChange;
   }
 
+  /** WS接続を開始する（未接続時のみ）。 */
   connect() {
     if (
       this.socket &&
@@ -118,6 +120,7 @@ export class WSClient {
     this.openSocket();
   }
 
+  /** WS接続を明示的に切断し、再接続を止める。 */
   disconnect() {
     this.closedByUser = true;
     this.clearReconnectTimer();
@@ -128,22 +131,26 @@ export class WSClient {
     this.setState("closed");
   }
 
+  /** 受信ハンドラを更新する（再接続時も新しいハンドラを使用）。 */
   updateHandlers(handlers: Pick<WSClientOptions, "onEvent" | "onError" | "onConnectionChange">) {
     this.onEvent = handlers.onEvent;
     this.onError = handlers.onError;
     this.onConnectionChange = handlers.onConnectionChange;
   }
 
+  /** 会話セッションIDを設定する（発行済みのIDを保持する用途）。 */
   setSessionId(sessionId: SessionId) {
     this.sessionId = sessionId;
   }
 
+  /** 会話セッションを開始する。 */
   startSession(sessionId: SessionId) {
     this.sessionId = sessionId;
     this.sessionActive = true;
     this.sendEvent({ type: "START_SESSION", sessionId });
   }
 
+  /** 会話セッションを停止する。 */
   stopSession() {
     if (!this.sessionId) {
       return;
@@ -152,16 +159,19 @@ export class WSClient {
     this.sendEvent({ type: "STOP_SESSION", sessionId: this.sessionId });
   }
 
+  /** ユーザー発話開始イベントを送信する。 */
   sendUserSpeechStart(timestampMs: number) {
     const sessionId = this.requireSession();
     this.sendEvent({ type: "USER_SPEECH_START", sessionId, timestampMs });
   }
 
+  /** ユーザー発話終了イベントを送信する。 */
   sendUserSpeechEnd(timestampMs: number) {
     const sessionId = this.requireSession();
     this.sendEvent({ type: "USER_SPEECH_END", sessionId, timestampMs });
   }
 
+  /** テキスト入力を送信する（空文字は無視）。 */
   sendTextInput(text: string) {
     if (text.trim().length === 0) {
       return;
@@ -170,11 +180,13 @@ export class WSClient {
     this.sendEvent({ type: "TEXT_INPUT", sessionId, text });
   }
 
+  /** 生成中の応答をキャンセルする。 */
   cancelResponse(generationId: GenerationId) {
     const sessionId = this.requireSession();
     this.sendEvent({ type: "CANCEL_RESPONSE", sessionId, generationId });
   }
 
+  /** 音声チャンクを送信する。 */
   sendAudioChunk(chunk: AudioChunk) {
     const sessionId = chunk.sessionId || this.requireSession();
     this.sendEvent({
@@ -183,6 +195,7 @@ export class WSClient {
     });
   }
 
+  /** 接続疎通確認のPINGを送信する。 */
   ping(timestampMs: number) {
     const sessionId = this.requireSession();
     this.sendEvent({ type: "PING", sessionId, timestampMs });

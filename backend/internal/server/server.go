@@ -4,6 +4,7 @@ import (
 	"net/http"
 )
 
+// NewMux はHTTPルーティングを構築する。
 func NewMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

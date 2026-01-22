@@ -1,5 +1,6 @@
 package server
 
+// AudioChunk は音声チャンクのメタ情報を表す。
 type AudioChunk struct {
 	SessionID   string `json:"sessionId,omitempty"`
 	Sequence    int    `json:"sequence,omitempty"`
@@ -10,6 +11,8 @@ type AudioChunk struct {
 	Data        any    `json:"data,omitempty"`
 }
 
+// ClientEvent はブラウザから送られるイベント。
+// SessionID は会話セッションID（プロトコル上の sessionId）を指す。
 type ClientEvent struct {
 	Type         string      `json:"type"`
 	SessionID    string      `json:"sessionId,omitempty"`
@@ -19,6 +22,8 @@ type ClientEvent struct {
 	Chunk        *AudioChunk `json:"chunk,omitempty"`
 }
 
+// ServerEvent はサーバから送信するイベント。
+// SessionID は会話セッションID（プロトコル上の sessionId）を指す。
 type ServerEvent struct {
 	Type          string   `json:"type"`
 	SessionID     string   `json:"sessionId,omitempty"`
@@ -35,6 +40,7 @@ type ServerEvent struct {
 	Metrics       *MetricSnapshot `json:"metrics,omitempty"`
 }
 
+// MetricSnapshot は1世代の処理時間をまとめたスナップショット。
 type MetricSnapshot struct {
 	GenerationID string `json:"generationId"`
 	ASRMs        *int64 `json:"asrMs,omitempty"`

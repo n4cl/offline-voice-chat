@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// SessionState は会話状態（Conversation State）を表す。
 type SessionState string
 
 const (
@@ -16,6 +17,7 @@ const (
 	StateCanceling SessionState = "canceling"
 )
 
+// Session は会話セッションの状態を保持する。
 type Session struct {
 	ID                 string
 	State              SessionState
@@ -32,15 +34,18 @@ type TranscriptEntry struct {
 	TimestampMs int64
 }
 
+// SessionManager は会話セッションの生成・状態遷移を管理する。
 type SessionManager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
 }
 
+// NewSessionManager は空の会話セッション管理を初期化する。
 func NewSessionManager() *SessionManager {
 	return &SessionManager{sessions: make(map[string]*Session)}
 }
 
+// Get は指定IDの会話セッションを取得する。
 func (m *SessionManager) Get(sessionID string) (Session, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -52,6 +57,7 @@ func (m *SessionManager) Get(sessionID string) (Session, bool) {
 	return *session, true
 }
 
+// Handle はクライアントイベントを処理し、必要に応じてサーバイベントを返す。
 func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 	if event.Type == "" {
 		return nil, fmt.Errorf("missing event type")
@@ -187,6 +193,7 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 
 const silentWavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="
 
+// MarkDisconnected は接続断の情報を会話セッションに反映する。
 func (m *SessionManager) MarkDisconnected(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

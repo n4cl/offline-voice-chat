@@ -7,6 +7,7 @@ let sharedUrl: string | null = null;
 let refCount = 0;
 let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** 共有WSクライアントを取得し、ハンドラを更新する。 */
 export const acquireWSClient = (options: WSClientOptions) => {
   if (!sharedClient || sharedUrl !== options.url) {
     sharedClient = new WSClient(options);
@@ -27,6 +28,7 @@ export const acquireWSClient = (options: WSClientOptions) => {
   return sharedClient;
 };
 
+/** 共有WSクライアントの参照を解放し、必要に応じて切断する。 */
 export const releaseWSClient = () => {
   if (refCount === 0) {
     return;
