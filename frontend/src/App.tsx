@@ -18,17 +18,15 @@ type ChatMessage = {
   text: string;
   timestamp: string;
   status: string;
+  audio?: {
+    url: string;
+    filename: string;
+  };
 };
 
 type Notice = {
   title: string;
   message: string;
-};
-
-type LatestAudio = {
-  url: string;
-  filename: string;
-  receivedAt: string;
 };
 
 const INITIAL_MESSAGES: ChatMessage[] = [];
@@ -98,6 +96,9 @@ const resolveErrorMessage = (message: string) => {
   return message;
 };
 
+const formatTimestamp = () =>
+  new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
 const decodeBase64 = (payload: string) => {
   if (payload.length === 0) {
     return new Uint8Array();
@@ -125,10 +126,12 @@ export default function App() {
   const [boundary, setBoundary] = useState<BoundaryView | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [uiState, setUiState] = useState<UIState>("idle");
-  const [messages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
-  const [latestAudio, setLatestAudio] = useState<LatestAudio | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
   const clientRef = useRef<WSClient | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const audioUrlsRef = useRef<string[]>([]);
   const wsUrl = useMemo(() => resolveWebSocketUrl(), []);
 
   useEffect(() => {
@@ -160,16 +163,18 @@ export default function App() {
           const data = decodeBase64(event.audioBase64);
           const blob = new Blob([data], { type: mimeType });
           const url = URL.createObjectURL(blob);
-          setLatestAudio((prev) => {
-            if (prev?.url) {
-              URL.revokeObjectURL(prev.url);
-            }
-            return {
-              url,
-              filename,
-              receivedAt: new Date().toLocaleTimeString(),
-            };
-          });
+          audioUrlsRef.current.push(url);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `assistant-${Date.now()}`,
+              speaker: "assistant",
+              text: "音声応答が届きました。",
+              timestamp: formatTimestamp(),
+              status: "音声受信",
+              audio: { url, filename },
+            },
+          ]);
         }
       },
       onConnectionChange: (state) => setConnectionState(state),
@@ -192,13 +197,25 @@ export default function App() {
 
   useEffect(() => {
     return () => {
-      if (latestAudio?.url) {
-        URL.revokeObjectURL(latestAudio.url);
+      for (const url of audioUrlsRef.current) {
+        URL.revokeObjectURL(url);
       }
+      const stream = micStreamRef.current;
+      if (stream && typeof stream.getTracks === "function") {
+        for (const track of stream.getTracks()) {
+          if (track?.stop) {
+            track.stop();
+          }
+        }
+      }
+      micStreamRef.current = null;
     };
-  }, [latestAudio]);
+  }, []);
 
   const requestMicrophonePermission = async () => {
+    if (micStreamRef.current) {
+      return true;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setNotice({
         title: "マイク未対応",
@@ -207,7 +224,15 @@ export default function App() {
       return false;
     }
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!stream || typeof stream.getTracks !== "function") {
+        setNotice({
+          title: "マイク未対応",
+          message: "この環境ではマイクを利用できません。",
+        });
+        return false;
+      }
+      micStreamRef.current = stream;
       return true;
     } catch (error) {
       setNotice({
@@ -238,6 +263,48 @@ export default function App() {
     }
   };
 
+  const handleCopyMessage = async (text: string) => {
+    if (!navigator.clipboard?.writeText) {
+      setNotice({ title: "コピー", message: "この環境ではコピーできません。" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice({ title: "コピー", message: "テキストをコピーしました。" });
+    } catch (error) {
+      setNotice({ title: "コピー", message: "コピーに失敗しました。" });
+    }
+  };
+
+  const handlePlayAudio = async (messageId: string) => {
+    const target = audioRefs.current[messageId];
+    if (!target) {
+      return;
+    }
+    try {
+      await target.play();
+    } catch (error) {
+      setNotice({
+        title: "再生エラー",
+        message: "音声の再生に失敗しました。もう一度お試しください。",
+      });
+    }
+  };
+
+  const stopMicrophone = () => {
+    const stream = micStreamRef.current;
+    if (!stream || typeof stream.getTracks !== "function") {
+      micStreamRef.current = null;
+      return;
+    }
+    for (const track of stream.getTracks()) {
+      if (track?.stop) {
+        track.stop();
+      }
+    }
+    micStreamRef.current = null;
+  };
+
   const handleStart = async () => {
     const client = clientRef.current;
     if (!client) {
@@ -263,6 +330,7 @@ export default function App() {
     if (!client) {
       return;
     }
+    stopMicrophone();
     client.stopSession();
     setSessionActive(false);
     setUiState("idle");
@@ -345,43 +413,47 @@ export default function App() {
                   <span>{message.timestamp}</span>
                   <span>{message.status}</span>
                 </div>
+                {message.audio ? (
+                  <div className="chat-audio">
+                    <audio
+                      ref={(node) => {
+                        audioRefs.current[message.id] = node;
+                      }}
+                      src={message.audio.url}
+                      aria-label="応答音声"
+                      preload="metadata"
+                    />
+                    <div className="chat-actions">
+                      <button
+                        className="chat-action"
+                        type="button"
+                        onClick={() => handleCopyMessage(message.text)}
+                        aria-label="コピー"
+                      >
+                        コピー
+                      </button>
+                      <button
+                        className="chat-action"
+                        type="button"
+                        onClick={() => handlePlayAudio(message.id)}
+                        aria-label="再生"
+                      >
+                        再生
+                      </button>
+                      <a
+                        className="chat-action chat-action--link"
+                        href={message.audio.url}
+                        download={message.audio.filename}
+                        aria-label="音声をダウンロード"
+                      >
+                        音声をダウンロード
+                      </a>
+                    </div>
+                  </div>
+                ) : null}
               </article>
             ))
           )}
-        </section>
-
-        <section className="audio-panel" aria-label="音声再生">
-          <div className="audio-card">
-            <div className="audio-header">
-              <div>
-                <p className="audio-title">最新の音声</p>
-                <p className="audio-subtitle">応答音声の再生と保存</p>
-              </div>
-              {latestAudio ? (
-                <span className="audio-timestamp">{latestAudio.receivedAt}</span>
-              ) : null}
-            </div>
-            {latestAudio ? (
-              <div className="audio-controls">
-                <audio
-                  className="audio-player"
-                  controls
-                  aria-label="最新の音声"
-                  src={latestAudio.url}
-                />
-                <a
-                  className="audio-download"
-                  href={latestAudio.url}
-                  download={latestAudio.filename}
-                  aria-label="音声をダウンロード"
-                >
-                  音声をダウンロード
-                </a>
-              </div>
-            ) : (
-              <p className="audio-empty">音声はまだありません。</p>
-            )}
-          </div>
         </section>
 
         <footer className="app-footer" aria-label="フッター">

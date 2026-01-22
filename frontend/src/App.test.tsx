@@ -46,7 +46,7 @@ vi.mock("./lib/wsClientManager", () => {
 beforeEach(() => {
   wsInstances.length = 0;
   vi.clearAllMocks();
-  const getUserMedia = vi.fn();
+  const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
   Object.defineProperty(global.navigator, "mediaDevices", {
     value: { getUserMedia },
     configurable: true,
@@ -107,7 +107,7 @@ describe("App", () => {
   });
 
   it("starts session after microphone permission is granted", async () => {
-    const getUserMedia = vi.fn().mockResolvedValue({});
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
     Object.defineProperty(global.navigator, "mediaDevices", {
       value: { getUserMedia },
       configurable: true,
@@ -147,7 +147,7 @@ describe("App", () => {
   });
 
   it("shows autoplay guidance when audio context cannot resume", async () => {
-    const getUserMedia = vi.fn().mockResolvedValue({});
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
     Object.defineProperty(global.navigator, "mediaDevices", {
       value: { getUserMedia },
       configurable: true,
@@ -167,7 +167,34 @@ describe("App", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/自動再生/i);
   });
 
-  it("shows playback and download controls when audio is ready", () => {
+  it("stops microphone tracks when the session is stopped", async () => {
+    const stopTrack = vi.fn();
+    const mockStream = { getTracks: () => [{ stop: stopTrack }] };
+    const getUserMedia = vi.fn().mockResolvedValue(mockStream);
+    Object.defineProperty(global.navigator, "mediaDevices", {
+      value: { getUserMedia },
+      configurable: true,
+    });
+    const resume = vi.fn().mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).AudioContext = class {
+      resume = resume;
+    };
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力停止/i }));
+    });
+
+    expect(stopTrack).toHaveBeenCalled();
+  });
+
+  it("shows playback and download controls within the assistant message when audio is ready", () => {
     const createObjectURL = vi.fn(() => "blob:audio");
     const revokeObjectURL = vi.fn();
     Object.defineProperty(global.URL, "createObjectURL", {
@@ -192,7 +219,10 @@ describe("App", () => {
       });
     });
 
-    expect(screen.getByLabelText(/最新の音声/i)).toBeInTheDocument();
+    expect(screen.getByText(/音声応答が届きました。/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /コピー/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /再生/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/応答音声/i)).toBeInTheDocument();
     const downloadLink = screen.getByRole("link", { name: /音声をダウンロード/i });
     expect(downloadLink).toHaveAttribute("href", "blob:audio");
     expect(downloadLink).toHaveAttribute("download", "reply.wav");
