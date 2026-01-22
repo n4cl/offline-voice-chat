@@ -46,6 +46,15 @@ vi.mock("./lib/wsClientManager", () => {
 beforeEach(() => {
   wsInstances.length = 0;
   vi.clearAllMocks();
+  const getUserMedia = vi.fn();
+  Object.defineProperty(global.navigator, "mediaDevices", {
+    value: { getUserMedia },
+    configurable: true,
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).AudioContext = class {
+    resume = vi.fn();
+  };
 });
 
 describe("App", () => {
@@ -70,12 +79,14 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("starts a session using the same session id from the voice button", () => {
+  it("starts a session using the same session id from the voice button", async () => {
     render(<App />);
     const client = wsInstances[0];
     const sessionId = client.setSessionId.mock.calls[0][0];
 
-    fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
 
     expect(client.startSession).toHaveBeenCalledWith(sessionId);
   });
@@ -93,5 +104,66 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /エラー通知を閉じる/i }));
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("starts session after microphone permission is granted", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({});
+    Object.defineProperty(global.navigator, "mediaDevices", {
+      value: { getUserMedia },
+      configurable: true,
+    });
+    const resume = vi.fn().mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).AudioContext = class {
+      resume = resume;
+    };
+
+    render(<App />);
+    const client = wsInstances[0];
+    const sessionId = client.setSessionId.mock.calls[0][0];
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    expect(getUserMedia).toHaveBeenCalled();
+    expect(client.startSession).toHaveBeenCalledWith(sessionId);
+  });
+
+  it("shows guidance when microphone permission is denied", async () => {
+    const getUserMedia = vi.fn().mockRejectedValue(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
+    Object.defineProperty(global.navigator, "mediaDevices", {
+      value: { getUserMedia },
+      configurable: true,
+    });
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/マイク利用が拒否されました/i);
+  });
+
+  it("shows autoplay guidance when audio context cannot resume", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({});
+    Object.defineProperty(global.navigator, "mediaDevices", {
+      value: { getUserMedia },
+      configurable: true,
+    });
+    const resume = vi.fn().mockRejectedValue(new Error("autoplay blocked"));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).AudioContext = class {
+      resume = resume;
+    };
+
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/自動再生/i);
   });
 });

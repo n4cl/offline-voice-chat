@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./app.css";
-import { type ConnectionState, type ServerEvent } from "./lib/wsClient";
+import { type ConnectionState, type ServerEvent, type WSClient } from "./lib/wsClient";
 import { acquireWSClient, releaseWSClient } from "./lib/wsClientManager";
 
 type BoundaryView = {
@@ -18,6 +18,11 @@ type ChatMessage = {
   text: string;
   timestamp: string;
   status: string;
+};
+
+type Notice = {
+  title: string;
+  message: string;
 };
 
 const INITIAL_MESSAGES: ChatMessage[] = [];
@@ -92,10 +97,11 @@ export default function App() {
   const [sessionId] = useState<string>(() => createSessionId());
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [boundary, setBoundary] = useState<BoundaryView | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [uiState, setUiState] = useState<UIState>("idle");
   const [messages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
   const clientRef = useRef<WSClient | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const wsUrl = useMemo(() => resolveWebSocketUrl(), []);
 
   useEffect(() => {
@@ -106,7 +112,7 @@ export default function App() {
           setBoundary({ scope: event.scope, allowedRanges: event.allowedRanges });
         }
         if (event.type === "ERROR") {
-          setLastError(event.message);
+          setNotice({ title: "エラー", message: event.message });
           setUiState("idle");
         }
         if (event.type === "PARTIAL_TRANSCRIPT") {
@@ -123,7 +129,8 @@ export default function App() {
         }
       },
       onConnectionChange: (state) => setConnectionState(state),
-      onError: (error) => setLastError(error.message),
+      onError: (error) =>
+        setNotice({ title: "通信エラー", message: resolveErrorMessage(error.message) }),
     });
     client.setSessionId(sessionId);
     client.connect();
@@ -139,13 +146,63 @@ export default function App() {
     };
   }, [sessionId, wsUrl]);
 
-  const handleStart = () => {
+  const requestMicrophonePermission = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setNotice({
+        title: "マイク未対応",
+        message: "このブラウザではマイクを利用できません。",
+      });
+      return false;
+    }
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      return true;
+    } catch (error) {
+      setNotice({
+        title: "マイク権限",
+        message: "マイク利用が拒否されました。ブラウザの設定で許可してください。",
+      });
+      return false;
+    }
+  };
+
+  const ensureAudioPlayback = async () => {
+    if (typeof AudioContext === "undefined") {
+      return true;
+    }
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+    }
+    try {
+      await audioContextRef.current.resume();
+      return true;
+    } catch (error) {
+      setNotice({
+        title: "自動再生制約",
+        message:
+          "音声の自動再生がブロックされています。開始ボタンを再度押すか、ブラウザ設定を確認してください。",
+      });
+      return false;
+    }
+  };
+
+  const handleStart = async () => {
     const client = clientRef.current;
     if (!client) {
       return;
     }
+    const hasPermission = await requestMicrophonePermission();
+    if (!hasPermission) {
+      setSessionActive(false);
+      setUiState("idle");
+      return;
+    }
+    const playbackReady = await ensureAudioPlayback();
     setSessionActive(true);
     setUiState("listening");
+    if (playbackReady) {
+      setNotice(null);
+    }
     client.startSession(sessionId);
   };
 
@@ -172,7 +229,6 @@ export default function App() {
   const boundaryLabel = boundary
     ? `${boundary.scope} (${boundary.allowedRanges.join(", ")})`
     : "Unknown";
-  const errorMessage = lastError ? resolveErrorMessage(lastError) : null;
 
   return (
     <main className="app-shell">
@@ -199,16 +255,16 @@ export default function App() {
             </div>
           </div>
         </header>
-        {errorMessage ? (
+        {notice ? (
           <div className="error-banner" role="alert" aria-live="polite">
             <div className="error-content">
-              <p className="error-title">通信エラー</p>
-              <p className="error-message">{errorMessage}</p>
+              <p className="error-title">{notice.title}</p>
+              <p className="error-message">{notice.message}</p>
             </div>
             <button
               className="error-dismiss"
               type="button"
-              onClick={() => setLastError(null)}
+              onClick={() => setNotice(null)}
               aria-label="エラー通知を閉じる"
             >
               閉じる
