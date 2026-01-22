@@ -50,7 +50,7 @@ export type ErrorCode =
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed" | "reconnecting";
 
-type WSClientOptions = {
+export type WSClientOptions = {
   url: string;
   reconnectDelayMs?: number;
   websocketFactory?: (url: string) => WebSocket;
@@ -109,6 +109,12 @@ export class WSClient {
     }
     this.socket = null;
     this.setState("closed");
+  }
+
+  updateHandlers(handlers: Pick<WSClientOptions, "onEvent" | "onError" | "onConnectionChange">) {
+    this.onEvent = handlers.onEvent;
+    this.onError = handlers.onError;
+    this.onConnectionChange = handlers.onConnectionChange;
   }
 
   setSessionId(sessionId: SessionId) {
@@ -206,6 +212,9 @@ export class WSClient {
     });
 
     socket.addEventListener("error", () => {
+      if (this.closedByUser) {
+        return;
+      }
       this.onError?.(new Error("websocket error"));
     });
   }

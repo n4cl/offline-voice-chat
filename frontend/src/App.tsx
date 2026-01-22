@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./app.css";
-import { type ConnectionState, type ServerEvent, WSClient } from "./lib/wsClient";
+import { type ConnectionState, type ServerEvent } from "./lib/wsClient";
+import { acquireWSClient, releaseWSClient } from "./lib/wsClientManager";
 
 type BoundaryView = {
   scope: string;
@@ -79,6 +80,13 @@ const getConnectionTone = (state: ConnectionState) => {
   return "muted";
 };
 
+const resolveErrorMessage = (message: string) => {
+  if (message === "websocket error") {
+    return "WebSocket接続エラーが発生しました。サーバやURLを確認してください。";
+  }
+  return message;
+};
+
 export default function App() {
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionId] = useState<string>(() => createSessionId());
@@ -91,7 +99,7 @@ export default function App() {
   const wsUrl = useMemo(() => resolveWebSocketUrl(), []);
 
   useEffect(() => {
-    const client = new WSClient({
+    const client = acquireWSClient({
       url: wsUrl,
       onEvent: (event: ServerEvent) => {
         if (event.type === "BOUNDARY_STATUS") {
@@ -120,7 +128,15 @@ export default function App() {
     client.setSessionId(sessionId);
     client.connect();
     clientRef.current = client;
-    return () => client.disconnect();
+    return () => {
+      client.updateHandlers({
+        onEvent: undefined,
+        onError: undefined,
+        onConnectionChange: undefined,
+      });
+      clientRef.current = null;
+      releaseWSClient();
+    };
   }, [sessionId, wsUrl]);
 
   const handleStart = () => {
@@ -156,6 +172,7 @@ export default function App() {
   const boundaryLabel = boundary
     ? `${boundary.scope} (${boundary.allowedRanges.join(", ")})`
     : "Unknown";
+  const errorMessage = lastError ? resolveErrorMessage(lastError) : null;
 
   return (
     <main className="app-shell">
@@ -182,6 +199,22 @@ export default function App() {
             </div>
           </div>
         </header>
+        {errorMessage ? (
+          <div className="error-banner" role="alert" aria-live="polite">
+            <div className="error-content">
+              <p className="error-title">通信エラー</p>
+              <p className="error-message">{errorMessage}</p>
+            </div>
+            <button
+              className="error-dismiss"
+              type="button"
+              onClick={() => setLastError(null)}
+              aria-label="エラー通知を閉じる"
+            >
+              閉じる
+            </button>
+          </div>
+        ) : null}
 
         <section className="chat-log" aria-label="チャットログ">
           {messages.length === 0 ? (
@@ -241,7 +274,6 @@ export default function App() {
             <span className="footer-meta">Boundary: {boundaryLabel}</span>
           </div>
         </footer>
-        {lastError ? <div className="error-banner">Error: {lastError}</div> : null}
       </div>
     </main>
   );
