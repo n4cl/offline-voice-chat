@@ -25,6 +25,12 @@ type Notice = {
   message: string;
 };
 
+type LatestAudio = {
+  url: string;
+  filename: string;
+  receivedAt: string;
+};
+
 const INITIAL_MESSAGES: ChatMessage[] = [];
 
 const UI_STATE_LABEL: Record<UIState, string> = {
@@ -92,6 +98,26 @@ const resolveErrorMessage = (message: string) => {
   return message;
 };
 
+const decodeBase64 = (payload: string) => {
+  if (payload.length === 0) {
+    return new Uint8Array();
+  }
+  if (typeof atob === "function") {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+  // eslint-disable-next-line no-undef
+  if (typeof Buffer !== "undefined") {
+    // eslint-disable-next-line no-undef
+    return Uint8Array.from(Buffer.from(payload, "base64"));
+  }
+  return new Uint8Array();
+};
+
 export default function App() {
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionId] = useState<string>(() => createSessionId());
@@ -100,6 +126,7 @@ export default function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [uiState, setUiState] = useState<UIState>("idle");
   const [messages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
+  const [latestAudio, setLatestAudio] = useState<LatestAudio | null>(null);
   const clientRef = useRef<WSClient | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const wsUrl = useMemo(() => resolveWebSocketUrl(), []);
@@ -127,6 +154,23 @@ export default function App() {
         if (event.type === "ASSISTANT_STOPPED") {
           setUiState("idle");
         }
+        if (event.type === "AUDIO_READY") {
+          const mimeType = event.mimeType ?? "audio/wav";
+          const filename = event.filename ?? `reply-${Date.now()}.wav`;
+          const data = decodeBase64(event.audioBase64);
+          const blob = new Blob([data], { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          setLatestAudio((prev) => {
+            if (prev?.url) {
+              URL.revokeObjectURL(prev.url);
+            }
+            return {
+              url,
+              filename,
+              receivedAt: new Date().toLocaleTimeString(),
+            };
+          });
+        }
       },
       onConnectionChange: (state) => setConnectionState(state),
       onError: (error) =>
@@ -145,6 +189,14 @@ export default function App() {
       releaseWSClient();
     };
   }, [sessionId, wsUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (latestAudio?.url) {
+        URL.revokeObjectURL(latestAudio.url);
+      }
+    };
+  }, [latestAudio]);
 
   const requestMicrophonePermission = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -296,6 +348,40 @@ export default function App() {
               </article>
             ))
           )}
+        </section>
+
+        <section className="audio-panel" aria-label="音声再生">
+          <div className="audio-card">
+            <div className="audio-header">
+              <div>
+                <p className="audio-title">最新の音声</p>
+                <p className="audio-subtitle">応答音声の再生と保存</p>
+              </div>
+              {latestAudio ? (
+                <span className="audio-timestamp">{latestAudio.receivedAt}</span>
+              ) : null}
+            </div>
+            {latestAudio ? (
+              <div className="audio-controls">
+                <audio
+                  className="audio-player"
+                  controls
+                  aria-label="最新の音声"
+                  src={latestAudio.url}
+                />
+                <a
+                  className="audio-download"
+                  href={latestAudio.url}
+                  download={latestAudio.filename}
+                  aria-label="音声をダウンロード"
+                >
+                  音声をダウンロード
+                </a>
+              </div>
+            ) : (
+              <p className="audio-empty">音声はまだありません。</p>
+            )}
+          </div>
         </section>
 
         <footer className="app-footer" aria-label="フッター">

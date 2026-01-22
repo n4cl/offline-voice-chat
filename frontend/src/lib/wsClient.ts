@@ -31,6 +31,13 @@ export type ServerEvent =
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "FINAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | {
+      type: "AUDIO_READY";
+      sessionId: SessionId;
+      audioBase64: string;
+      mimeType?: string;
+      filename?: string;
+    }
+  | {
       type: "BOUNDARY_STATUS";
       sessionId: SessionId;
       scope: BoundaryScope;

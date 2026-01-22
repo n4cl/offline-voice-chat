@@ -166,4 +166,35 @@ describe("App", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent(/自動再生/i);
   });
+
+  it("shows playback and download controls when audio is ready", () => {
+    const createObjectURL = vi.fn(() => "blob:audio");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(global.URL, "createObjectURL", {
+      value: createObjectURL,
+      configurable: true,
+    });
+    Object.defineProperty(global.URL, "revokeObjectURL", {
+      value: revokeObjectURL,
+      configurable: true,
+    });
+
+    render(<App />);
+    const client = wsInstances[0];
+
+    act(() => {
+      client.options.onEvent?.({
+        type: "AUDIO_READY",
+        sessionId: "session-1",
+        audioBase64: "AA==",
+        mimeType: "audio/wav",
+        filename: "reply.wav",
+      });
+    });
+
+    expect(screen.getByLabelText(/最新の音声/i)).toBeInTheDocument();
+    const downloadLink = screen.getByRole("link", { name: /音声をダウンロード/i });
+    expect(downloadLink).toHaveAttribute("href", "blob:audio");
+    expect(downloadLink).toHaveAttribute("download", "reply.wav");
+  });
 });
