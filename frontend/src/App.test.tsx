@@ -93,18 +93,52 @@ describe("App", () => {
     expect(client.startSession).toHaveBeenCalledWith(sessionId);
   });
 
-  it("shows and dismisses websocket error banner", () => {
+  it("shows error guidance and allows retry", async () => {
     render(<App />);
     const client = wsInstances[0];
 
     act(() => {
-      client.options.onError?.(new Error("websocket error"));
+      client.options.onEvent?.({
+        type: "ERROR",
+        sessionId: "s1",
+        code: "ASR_FAILED",
+        message: "asr failed",
+      });
     });
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/WebSocket接続エラー/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/asr failed/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/ASR/i);
 
-    fireEvent.click(screen.getByRole("button", { name: /エラー通知を閉じる/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /再試行/i }));
+    });
 
+    expect(client.connect).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("allows safe end when an error occurs", async () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    act(() => {
+      client.options.onEvent?.({
+        type: "ERROR",
+        sessionId: "s1",
+        code: "LLM_FAILED",
+        message: "llm failed",
+      });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /安全に終了/i }));
+    });
+
+    expect(client.stopSession).toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

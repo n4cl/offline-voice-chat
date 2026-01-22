@@ -31,6 +31,12 @@ type Notice = {
   message: string;
 };
 
+type ErrorState = {
+  code: string;
+  message: string;
+  hint: string;
+};
+
 const INITIAL_MESSAGES: ChatMessage[] = [];
 
 const UI_STATE_LABEL: Record<UIState, string> = {
@@ -98,6 +104,27 @@ const resolveErrorMessage = (message: string) => {
   return message;
 };
 
+const resolveErrorHint = (code: string) => {
+  switch (code) {
+    case "PERMISSION_DENIED":
+      return "マイクの権限が必要です。ブラウザの設定で許可してください。";
+    case "DEVICE_UNAVAILABLE":
+      return "マイクが利用できません。接続を確認してください。";
+    case "ASR_FAILED":
+      return "ローカルASRサービスの起動を確認してください。";
+    case "LLM_FAILED":
+      return "ローカルLLMサービスの起動を確認してください。";
+    case "TTS_FAILED":
+      return "ローカルTTSサービスの起動を確認してください。";
+    case "BOUNDARY_VIOLATION":
+      return "通信境界違反が検出されました。設定を見直してください。";
+    case "CHANNEL_DISCONNECTED":
+      return "接続が切断されました。再接続をお試しください。";
+    default:
+      return "しばらく待って再試行してください。";
+  }
+};
+
 const formatTimestamp = () =>
   new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -136,6 +163,7 @@ export default function App() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [boundary, setBoundary] = useState<BoundaryView | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [errorState, setErrorState] = useState<ErrorState | null>(null);
   const [uiState, setUiState] = useState<UIState>("idle");
   const [messages, setMessages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
   const [textInput, setTextInput] = useState("");
@@ -155,7 +183,11 @@ export default function App() {
           setBoundary({ scope: event.scope, allowedRanges: event.allowedRanges });
         }
         if (event.type === "ERROR") {
-          setNotice({ title: "エラー", message: event.message });
+          setErrorState({
+            code: event.code,
+            message: event.message,
+            hint: resolveErrorHint(event.code),
+          });
           setUiState("idle");
         }
         if (event.type === "PARTIAL_TRANSCRIPT") {
@@ -259,7 +291,11 @@ export default function App() {
       },
       onConnectionChange: (state) => setConnectionState(state),
       onError: (error) =>
-        setNotice({ title: "通信エラー", message: resolveErrorMessage(error.message) }),
+        setErrorState({
+          code: "CHANNEL_DISCONNECTED",
+          message: resolveErrorMessage(error.message),
+          hint: resolveErrorHint("CHANNEL_DISCONNECTED"),
+        }),
     });
     client.setSessionId(sessionId);
     client.connect();
@@ -376,6 +412,28 @@ export default function App() {
         message: "音声の再生に失敗しました。もう一度お試しください。",
       });
     }
+  };
+
+  const handleRetry = () => {
+    setErrorState(null);
+    const client = clientRef.current;
+    if (client) {
+      client.connect();
+      if (sessionActive) {
+        client.startSession(sessionId);
+      }
+    }
+  };
+
+  const handleSafeEnd = () => {
+    const client = clientRef.current;
+    stopMicrophone();
+    if (client) {
+      client.stopSession();
+    }
+    setSessionActive(false);
+    setUiState("idle");
+    setErrorState(null);
   };
 
   const handleSendText = () => {
@@ -503,6 +561,22 @@ export default function App() {
             >
               閉じる
             </button>
+          </div>
+        ) : errorState ? (
+          <div className="error-banner" role="alert" aria-live="polite">
+            <div className="error-content">
+              <p className="error-title">エラー</p>
+              <p className="error-message">{errorState.message}</p>
+              <p className="error-hint">{errorState.hint}</p>
+            </div>
+            <div className="error-actions">
+              <button className="error-action" type="button" onClick={handleRetry}>
+                再試行
+              </button>
+              <button className="error-action" type="button" onClick={handleSafeEnd}>
+                安全に終了
+              </button>
+            </div>
           </div>
         ) : null}
 
