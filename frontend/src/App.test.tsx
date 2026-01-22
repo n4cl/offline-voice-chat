@@ -8,6 +8,7 @@ type WSClientMock = {
   setSessionId: ReturnType<typeof vi.fn>;
   startSession: ReturnType<typeof vi.fn>;
   stopSession: ReturnType<typeof vi.fn>;
+  sendTextInput: ReturnType<typeof vi.fn>;
   updateHandlers: ReturnType<typeof vi.fn>;
   options: {
     onEvent?: (event: unknown) => void;
@@ -25,6 +26,7 @@ const { wsInstances, createClient } = vi.hoisted(() => {
       setSessionId: vi.fn(),
       startSession: vi.fn(),
       stopSession: vi.fn(),
+      sendTextInput: vi.fn(),
       updateHandlers: vi.fn((handlers) => {
         instance.options = { ...instance.options, ...handlers };
       }),
@@ -104,6 +106,34 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /エラー通知を閉じる/i }));
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("sends text input and clears the field", async () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "hello" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /送信/i }));
+    });
+
+    expect(client.sendTextInput).toHaveBeenCalledWith("hello");
+    expect(input.value).toBe("");
+  });
+
+  it("locks text input while voice session is active", async () => {
+    render(<App />);
+    const input = screen.getByLabelText(/メッセージ/i);
+    const sendButton = screen.getByRole("button", { name: /送信/i });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    expect(input).toBeDisabled();
+    expect(sendButton).toBeDisabled();
   });
 
   it("starts session after microphone permission is granted", async () => {

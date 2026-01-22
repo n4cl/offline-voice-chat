@@ -127,6 +127,7 @@ export default function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [uiState, setUiState] = useState<UIState>("idle");
   const [messages, setMessages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
+  const [textInput, setTextInput] = useState("");
   const clientRef = useRef<WSClient | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -289,6 +290,32 @@ export default function App() {
         message: "音声の再生に失敗しました。もう一度お試しください。",
       });
     }
+  };
+
+  const handleSendText = () => {
+    if (sessionActive) {
+      return;
+    }
+    const trimmed = textInput.trim();
+    if (!trimmed) {
+      return;
+    }
+    const client = clientRef.current;
+    if (!client) {
+      return;
+    }
+    client.sendTextInput(trimmed);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        speaker: "user",
+        text: trimmed,
+        timestamp: formatTimestamp(),
+        status: "送信済み",
+      },
+    ]);
+    setTextInput("");
   };
 
   const stopMicrophone = () => {
@@ -469,8 +496,21 @@ export default function App() {
               className="chat-input"
               type="text"
               placeholder="お話してみましょう"
+              value={textInput}
+              onChange={(event) => setTextInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  handleSendText();
+                }
+              }}
+              disabled={sessionActive}
             />
-            <button className="send-button" type="button">
+            <button
+              className="send-button"
+              type="button"
+              onClick={handleSendText}
+              disabled={sessionActive}
+            >
               送信
             </button>
             <button
@@ -483,6 +523,7 @@ export default function App() {
               {sessionActive ? "音声入力停止" : "音声入力開始"}
             </button>
           </section>
+          <p className="input-hint">テキストと音声はどちらも同等に利用できます。</p>
           <div className="footer-meta-row">
             <span className="metrics-hint">ASR 320ms | LLM 1.1s | TTS 240ms</span>
             <span className="footer-meta">Boundary: {boundaryLabel}</span>

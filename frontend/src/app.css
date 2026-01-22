@@ -327,6 +327,11 @@ body {
   outline: none;
 }
 
+.chat-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .send-button {
   padding: 12px 18px;
   border: none;
@@ -334,6 +339,11 @@ body {
   color: var(--ink-900);
   font-weight: 600;
   cursor: pointer;
+}
+
+.send-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .voice-toggle {
@@ -354,6 +364,14 @@ body {
   border-radius: 999px;
   background: var(--jade-300);
   box-shadow: 0 0 0 4px rgba(118, 217, 193, 0.12);
+}
+
+.input-hint {
+  width: min(960px, 100%);
+  margin: 4px auto 0;
+  font-size: 11px;
+  color: var(--mist-200);
+  letter-spacing: 0.08em;
 }
 
 .footer-meta-row {
