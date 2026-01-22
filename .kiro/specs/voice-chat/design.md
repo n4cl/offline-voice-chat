@@ -75,8 +75,8 @@ graph TB
 | Layer | Choice / Version | Role in Feature | Notes |
 |-------|------------------|-----------------|-------|
 | Frontend / CLI | React + TypeScript (Vite) | UI/状態表示、音声I/O、双方向通信 | AudioWorkletを主経路、ユーザー操作でAudioContextを開始 |
-| Backend / Services | Go 1.25 | ローカルオーケストレータ | API/WS境界とセッション管理 |
-| Data / Storage | In-memory + Local file (opt-in) | セッション/ログ | 保持期限と削除APIを用意 |
+| Backend / Services | Go 1.25 | ローカルオーケストレータ | API/WS境界と会話セッション管理 |
+| Data / Storage | In-memory + Local file (opt-in) | 会話セッション/ログ | 保持期限と削除APIを用意 |
 | Messaging / Events | WebSocket (github.com/coder/websocket) | 制御/音声チャンク | MVPはWS一本化 |
 | Infrastructure / Runtime | Docker Compose, Localhost / RFC1918 | ローカル隔離 | RFC1918 + localhost のみ通信 |
 | ASR | whisper.cpp (latest stable) | ローカル音声認識 | アダプタ経由 |
@@ -85,12 +85,13 @@ graph TB
 
 ## System Flows
 
-ブラウザはページロード時にWS接続を確立し、テキスト入力は音声セッションの開始/停止に関わらず利用可能とする。音声入力はユーザー操作でマイクを有効化したときのみ開始する。
+ブラウザはページロード時にWS接続を確立し、テキスト入力は音声入力状態の開始/停止に関わらず利用可能とする。音声入力はユーザー操作でマイクを有効化したときのみ開始する。
 
-**用語の整理**
+**用語の整理（詳細は glossary.md を参照）**
 - **Connection**: ブラウザとローカルバックエンドのWS接続単位（再接続時に再確立される）
-- **SessionId**: 接続確立時にクライアントで生成して保持し、TEXT_INPUT/音声イベントの関連付けに使う論理ID
-- **Voice Session**: マイク権限取得後に開始される音声入力セッション（開始/停止で明示的に制御）
+- **Conversation**: 会話履歴と generationId を束ねる論理単位
+- **Conversation ID (`sessionId`)**: プロトコル上の識別子。会話セッションIDを指す
+- **Voice State**: マイク入力の開始/停止や入力受付中かどうかを示す状態
 
 ### 音声入力〜応答再生
 ```mermaid
@@ -151,7 +152,7 @@ sequenceDiagram
   Orchestrator-->>Browser: ASSISTANT_STOPPED
 ```
 
-### セッション状態
+### 会話状態
 ```mermaid
 stateDiagram-v2
   [*] --> IDLE
@@ -171,18 +172,18 @@ stateDiagram-v2
   SPEAKING --> ERROR: BOUNDARY_VIOLATION
   CANCELING --> ERROR: BOUNDARY_VIOLATION
 ```
-※ 本図は **Voice Session** の状態遷移を示す。TEXT_INPUT は音声セッションの有無に関わらず利用可能で、送信時は THINKING → SPEAKING → IDLE の遷移を想定する。
+※ 本図は **会話状態（Conversation State）** の遷移を示す。TEXT_INPUT は音声入力状態の有無に関わらず利用可能で、送信時は THINKING → SPEAKING → IDLE の遷移を想定する。音声入力状態（Voice State）は別途管理する。
 
 ## Requirements Traceability
 
 | Requirement | Summary | Components | Interfaces | Flows |
 |-------------|---------|------------|------------|-------|
 | 1.1, 1.2, 1.3, 1.4 | ローカル完結とデータ境界 | BoundaryGuard, Orchestrator, SessionStore | WS API, Policy Config | 音声入力〜応答再生 |
-| 2.1, 2.2, 2.3, 2.4, 2.5 | セッション開始/停止 | UI, AudioCapture, Orchestrator | WS API | 音声入力〜応答再生 |
+| 2.1, 2.2, 2.3, 2.4, 2.5 | 音声入力開始/停止 | UI, AudioCapture, Orchestrator | WS API | 音声入力〜応答再生 |
 | 3.1, 3.2, 3.3, 3.4, 3.5 | ハンズフリー入力 | AudioCapture | AudioCapture API | 音声入力〜応答再生 |
 | 4.1, 4.2, 4.3, 4.4, 4.5 | ASR/LLM/TTSパイプライン | Orchestrator, ASRAdapter, LLMAdapter, TTSAdapter | Adapter Service API | 音声入力〜応答再生 |
 | 5.1, 5.2, 5.3, 5.4, 5.5 | 全二重と割り込み | AudioPlayback, Orchestrator | WS API, Cancel API | 割り込み |
-| 6.1, 6.2, 6.3, 6.4, 6.5 | 状態表示 | UI, SessionState | UI State Contract | 音声入力〜応答再生 |
+| 6.1, 6.2, 6.3, 6.4, 6.5 | 状態表示 | UI, ConversationState | UI State Contract | 音声入力〜応答再生 |
 | 7.1, 7.2, 7.3, 7.4, 7.5 | エラー処理 | Orchestrator, UI | Error Envelope | 音声入力〜応答再生 |
 | 8.1, 8.2, 8.3, 8.4, 8.5 | 観測性 | Metrics, Orchestrator | Metrics API | 音声入力〜応答再生 |
 | 9.1, 9.2, 9.3, 9.4, 9.5 | 双方向通信 | WSClient, Orchestrator | WS API | 音声入力〜応答再生 |
@@ -195,13 +196,13 @@ stateDiagram-v2
 ### Component Summary
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies (P0/P1) | Contracts |
 |-----------|--------------|--------|--------------|--------------------------|-----------|
-| VoiceChatUI | Browser UI | 状態表示と操作 | 2.1, 2.4, 6.1, 10.1 | SessionState (P0) | State |
+| VoiceChatUI | Browser UI | 状態表示と操作 | 2.1, 2.4, 6.1, 10.1 | ConversationState (P0) | State |
 | TextInput | Browser UI | テキスト入力 | 12.1, 12.2, 12.3, 12.4, 12.5 | WSClient (P0) | Event |
 | AudioCapture | Browser Audio | VADと音声取得 | 3.1, 3.2, 3.3 | AudioWorklet (P0) | Service, State |
 | AudioPlayback | Browser Audio | 応答再生と停止 | 5.1, 10.3 | AudioContext (P0) | State |
 | WSClient | Browser Net | 双方向通信 | 9.1, 9.2 | WebSocket (P0) | API, Event |
-| Orchestrator | Local Core | セッション制御/パイプライン統合 | 2.3, 4.1, 5.2 | Adapters (P0) | Service, Event |
-| SessionStore | Local Core | セッション/履歴の保持 | 1.4, 4.5 | LocalStorage (P1) | Service, State |
+| Orchestrator | Local Core | 会話セッション制御/パイプライン統合 | 2.3, 4.1, 5.2 | Adapters (P0) | Service, Event |
+| SessionStore | Local Core | 会話セッション/履歴の保持 | 1.4, 4.5 | LocalStorage (P1) | Service, State |
 | ASRAdapter | Local Adapter | ASR統合 | 4.1 | ASRService (P0) | Service |
 | LLMAdapter | Local Adapter | LLM統合 | 4.2 | LLMService (P0) | Service |
 | TTSAdapter | Local Adapter | TTS統合 | 4.3, 5.2 | TTSService (P0) | Service |
@@ -213,14 +214,14 @@ stateDiagram-v2
 #### VoiceChatUI
 | Field | Detail |
 |-------|--------|
-| Intent | セッション状態の表示、開始/停止操作 |
+| Intent | 会話状態の表示、開始/停止操作 |
 | Requirements | 2.1, 2.4, 6.1, 10.1 |
 
 **Responsibilities & Constraints**
-- セッション状態（待機/収録/処理/再生）を表示
+- 会話状態（待機/収録/処理/再生）を表示
 - 開始/停止操作を提供
 - テキスト入力と音声入力の両方が同等に使えることを明示
-- 接続状態と音声セッション状態を分離して扱う
+- 接続状態と音声入力状態を分離して扱う
 
 **Dependencies**
 - Inbound: WSClient — サーバ状態イベント (P0)
@@ -232,12 +233,12 @@ stateDiagram-v2
 ##### State Management
 ```typescript
 type UIStatus = {
-  sessionState: "idle" | "listening" | "thinking" | "speaking";
+  conversationState: "idle" | "listening" | "thinking" | "speaking";
 };
 ```
 - Preconditions: サーバから状態イベントを受信済み
 - Postconditions: UIに状態が表示される
-- Invariants: sessionState はサーバ状態と整合
+- Invariants: conversationState はサーバ状態と整合
 
 **Implementation Notes**
 - Risks: 状態イベント遅延による表示のズレ
@@ -250,9 +251,9 @@ type UIStatus = {
 
 **Responsibilities & Constraints**
 - テキスト入力を `TEXT_INPUT` としてWS送信する
-- 音声セッションの有無に関わらず送信可能とする
+- 音声入力状態の有無に関わらず送信可能とする
 - 空文字列は送信しない
-- 音声セッション開始中は入力欄をロックし、送信を防止する
+- 音声入力開始中は入力欄をロックし、送信を防止する
 
 **Dependencies**
 - Inbound: VoiceChatUI — 送信操作 (P0)
@@ -269,7 +270,7 @@ type UIStatus = {
 
 **Responsibilities & Constraints**
 - AudioWorkletでVADを実行し発話開始/終了を判定
-- 入力はセッション有効時のみ
+- 入力は音声入力状態が有効なときのみ
 - 取得音声は一定フォーマットで送出
 
 **Dependencies**
@@ -308,7 +309,7 @@ interface AudioCaptureService {
   onChunk(cb: (chunk: AudioChunkPayload) => void): void;
 }
 ```
-- Preconditions: セッションが開始済み
+- Preconditions: 音声入力状態が開始済み
 - Postconditions: 発話区間のチャンクが順序通りに発行される
 - Invariants: sessionId と sequence は単調増加
 
@@ -407,7 +408,7 @@ type ErrorCode =
   | "CHANNEL_DISCONNECTED"
   | "UNKNOWN";
 ```
-- Preconditions: セッション開始済み
+- Preconditions: 会話セッション開始済み
 - Postconditions: 接続維持中は送受信が継続
 - Invariants: generationId は応答単位で一意
 
@@ -429,14 +430,14 @@ type ErrorCode =
 #### Orchestrator
 | Field | Detail |
 |-------|--------|
-| Intent | セッション管理とASR/LLM/TTSパイプライン制御 |
+| Intent | 会話セッション管理とASR/LLM/TTSパイプライン制御 |
 | Requirements | 2.3, 4.1, 4.2, 4.3, 5.2, 7.1 |
 
 **Responsibilities & Constraints**
-- セッション状態遷移と generationId 管理
+- 会話状態遷移と generationId 管理
 - CANCEL_RESPONSE による中断処理
 - TEXT_INPUT はASRを経由せず、ASR完了相当としてLLM/TTSへ進める
-- TEXT_INPUT は音声セッションの状態に関わらず受理する
+- TEXT_INPUT は音声入力状態に関わらず受理する
 - TEXT_INPUT を受信したら user の transcript をSessionStoreへ追加する
 
 **Dependencies**
@@ -461,21 +462,21 @@ interface OrchestratorService {
 - Integration: アダプタのI/FでASR/LLM/TTSを統合
 - Validation: 状態遷移の整合性をチェック
 - Risks: 中断競合による再生誤り
-- Notes: TEXT_INPUT 受信時に sessionId が未存在なら新規セッションを初期化して処理を継続する
+- Notes: TEXT_INPUT 受信時に sessionId が未存在なら新規の会話セッションを初期化して処理を継続する
 
 #### SessionStore
 | Field | Detail |
 |-------|--------|
-| Intent | セッションと履歴の保持、削除 |
+| Intent | 会話セッションと履歴の保持、削除 |
 | Requirements | 1.4, 4.5 |
 
 **Responsibilities & Constraints**
-- セッション状態と履歴を保持（デフォルトはメモリ、永続化はオプトイン）
+- 会話状態と履歴を保持（デフォルトはメモリ、永続化はオプトイン）
 - ユーザー削除操作でローカル保存データを完全削除
 - 保持期限と容量の上限を設定可能
 
 **Dependencies**
-- Inbound: Orchestrator — セッション更新 (P0)
+- Inbound: Orchestrator — 会話セッション更新 (P0)
 - Outbound: None
 - External: LocalStorage — ローカル保存 (P1)
 
@@ -509,7 +510,7 @@ interface SessionStoreService {
 ```
 - Preconditions: sessionId が有効
 - Postconditions: 削除後はローカルに痕跡を残さない
-- Invariants: retention 設定はセッション単位で一貫
+- Invariants: retention 設定は会話セッション単位で一貫
 
 **Implementation Notes**
 - Integration: 永続化は明示的に有効化された場合のみ
@@ -722,22 +723,22 @@ interface TTSService {
 ## Data Models
 
 ### Domain Model
-- **Session**: セッション状態、generationId、開始/終了時刻
+- **Conversation**: 会話状態、generationId、開始/終了時刻
 - **Generation**: 応答生成単位（LLM/TTS）
 - **Transcript**: ASR結果（partial/final）
 - **RetentionPolicy**: 保存モード、保持期限、容量上限
 
 ### Logical Data Model
 **Structure Definition**:
-- Session { sessionId, state, activeGenerationId, startedAt, stoppedAt }
+- ConversationSession { sessionId, state, activeGenerationId, startedAt, stoppedAt }
 - Generation { generationId, sessionId, status, createdAt }
 - MetricEvent { name, timestampMs, valueMs }
 - RetentionPolicy { mode, ttlMs, maxSessions }
 
 **Consistency & Integrity**:
-- Session は単一アクティブ generationId を保持
+- ConversationSession は単一アクティブ generationId を保持
 - Generation は sessionId に従属
-- delete 操作は Session/Transcript を完全に削除
+- delete 操作は ConversationSession/Transcript を完全に削除
 
 ### Data Contracts & Integration
 - WebSocket イベントは `ClientEvent` / `ServerEvent` に準拠
@@ -748,17 +749,17 @@ interface TTSService {
 
 ### Error Strategy
 - 早期検知と即時通知
-- セッション継続可能なら復旧を優先
+- 会話セッション継続可能なら復旧を優先
 
 ### Error Categories and Responses
 - **User Errors**: 権限拒否・デバイス未接続 → 操作ガイド
 - **System Errors**: ASR/LLM/TTS失敗 → 再試行案内
-- **State Errors**: セッション不整合 → セッション再初期化
-- **Boundary Violations**: 外向き通信を検知したら `ERROR (BOUNDARY_VIOLATION)` を通知し、セッションを停止
+- **State Errors**: 会話セッション不整合 → 会話セッション再初期化
+- **Boundary Violations**: 外向き通信を検知したら `ERROR (BOUNDARY_VIOLATION)` を通知し、会話セッションを停止
 
 ### Monitoring
 - ERROR イベントを Metrics に記録
-- 重大エラー時はセッションを安全終了
+- 重大エラー時は会話セッションを安全終了
 
 ## Testing Strategy
 - **Unit Tests**: VAD判定、状態遷移、メッセージバリデーション
