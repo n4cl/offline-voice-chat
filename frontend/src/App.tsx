@@ -203,6 +203,7 @@ export default function App() {
   const [uiState, setUiState] = useState<UIState>("idle");
   const [messages, setMessages] = useState<ChatMessage[]>(() => INITIAL_MESSAGES);
   const [textInput, setTextInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [metrics, setMetrics] = useState<MetricSnapshot | null>(null);
   const clientRef = useRef<WSClient | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -522,6 +523,19 @@ export default function App() {
       createPendingAssistant(),
     ]);
     setTextInput("");
+    if (inputRef.current) {
+      inputRef.current.style.height = "";
+    }
+  };
+
+  /**
+   * テキスト入力欄の高さを内容に合わせて調整する（上限6行）。
+   */
+  const adjustInputHeight = (target: HTMLTextAreaElement) => {
+    target.style.height = "auto";
+    const lineHeight = parseFloat(getComputedStyle(target).lineHeight || "0");
+    const maxHeight = lineHeight > 0 ? lineHeight * 6 : 160;
+    target.style.height = `${Math.min(target.scrollHeight, maxHeight)}px`;
   };
 
   /**
@@ -749,7 +763,11 @@ export default function App() {
               rows={1}
               placeholder="お話してみましょう"
               value={textInput}
-              onChange={(event) => setTextInput(event.target.value)}
+              ref={inputRef}
+              onChange={(event) => {
+                setTextInput(event.target.value);
+                adjustInputHeight(event.currentTarget);
+              }}
               onKeyDown={handleTextKeyDown}
               disabled={voiceActive}
             />

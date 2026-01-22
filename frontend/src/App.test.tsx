@@ -244,6 +244,25 @@ describe("App", () => {
     expect(input.value).toBe("line");
   });
 
+  it("adjusts textarea height with an upper limit", () => {
+    render(<App />);
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLTextAreaElement;
+
+    Object.defineProperty(input, "scrollHeight", {
+      value: 40,
+      configurable: true,
+    });
+    fireEvent.change(input, { target: { value: "line" } });
+    expect(input.style.height).toBe("40px");
+
+    Object.defineProperty(input, "scrollHeight", {
+      value: 400,
+      configurable: true,
+    });
+    fireEvent.change(input, { target: { value: "line\nline\nline\nline\nline\nline\nline" } });
+    expect(parseInt(input.style.height, 10)).toBeLessThanOrEqual(200);
+  });
+
   it("scrolls to the bottom when a new message is sent", async () => {
     render(<App />);
     const bottomMarker = screen.getByTestId("chat-bottom") as HTMLDivElement;
