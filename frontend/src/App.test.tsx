@@ -123,6 +123,23 @@ describe("App", () => {
     expect(input.value).toBe("");
   });
 
+  it("scrolls to the bottom when a new message is sent", async () => {
+    render(<App />);
+    const bottomMarker = screen.getByTestId("chat-bottom") as HTMLDivElement;
+    const scrollIntoView = vi.fn();
+    // eslint-disable-next-line no-param-reassign
+    bottomMarker.scrollIntoView = scrollIntoView;
+
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "hello" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /送信/i }));
+    });
+
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
   it("locks text input while voice session is active", async () => {
     render(<App />);
     const input = screen.getByLabelText(/メッセージ/i);

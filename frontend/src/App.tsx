@@ -18,6 +18,8 @@ type ChatMessage = {
   text: string;
   timestamp: string;
   status: string;
+  phase?: "pending" | "ready";
+  generationId?: string;
   audio?: {
     url: string;
     filename: string;
@@ -119,6 +121,15 @@ const decodeBase64 = (payload: string) => {
   return new Uint8Array();
 };
 
+const createPendingAssistant = () => ({
+  id: `assistant-${Date.now()}`,
+  speaker: "assistant" as const,
+  text: "応答を生成しています…",
+  timestamp: formatTimestamp(),
+  status: "処理中",
+  phase: "pending" as const,
+});
+
 export default function App() {
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionId] = useState<string>(() => createSessionId());
@@ -133,6 +144,7 @@ export default function App() {
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const audioUrlsRef = useRef<string[]>([]);
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const wsUrl = useMemo(() => resolveWebSocketUrl(), []);
 
   useEffect(() => {
@@ -154,6 +166,32 @@ export default function App() {
         }
         if (event.type === "ASSISTANT_SPEAKING") {
           setUiState("speaking");
+          setMessages((prev) => {
+            const index = [...prev]
+              .map((message, idx) => ({ message, idx }))
+              .reverse()
+              .find(
+                ({ message }) =>
+                  message.speaker === "assistant" && message.phase === "pending",
+              )?.idx;
+            if (index === undefined) {
+              return [
+                ...prev,
+                {
+                  ...createPendingAssistant(),
+                  generationId: event.generationId,
+                },
+              ];
+            }
+            return prev.map((message, idx) =>
+              idx === index
+                ? {
+                    ...message,
+                    generationId: event.generationId,
+                  }
+                : message,
+            );
+          });
         }
         if (event.type === "ASSISTANT_STOPPED") {
           setUiState("idle");
@@ -165,17 +203,58 @@ export default function App() {
           const blob = new Blob([data], { type: mimeType });
           const url = URL.createObjectURL(blob);
           audioUrlsRef.current.push(url);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `assistant-${Date.now()}`,
-              speaker: "assistant",
-              text: "音声応答が届きました。",
-              timestamp: formatTimestamp(),
-              status: "音声受信",
-              audio: { url, filename },
-            },
-          ]);
+          setMessages((prev) => {
+            let updated = false;
+            const next = prev.map((message) => {
+              if (event.generationId && message.generationId === event.generationId) {
+                updated = true;
+                return {
+                  ...message,
+                  text: "音声応答が届きました。",
+                  status: "音声受信",
+                  phase: "ready",
+                  audio: { url, filename },
+                };
+              }
+              return message;
+            });
+            if (updated) {
+              return next;
+            }
+            const pendingIndex = [...next]
+              .map((message, idx) => ({ message, idx }))
+              .reverse()
+              .find(
+                ({ message }) =>
+                  message.speaker === "assistant" && message.phase === "pending",
+              )?.idx;
+            if (pendingIndex === undefined) {
+              return [
+                ...next,
+                {
+                  id: `assistant-${Date.now()}`,
+                  speaker: "assistant",
+                  text: "音声応答が届きました。",
+                  timestamp: formatTimestamp(),
+                  status: "音声受信",
+                  phase: "ready",
+                  audio: { url, filename },
+                },
+              ];
+            }
+            return next.map((message, idx) =>
+              idx === pendingIndex
+                ? {
+                    ...message,
+                    text: "音声応答が届きました。",
+                    status: "音声受信",
+                    phase: "ready",
+                    generationId: event.generationId ?? message.generationId,
+                    audio: { url, filename },
+                  }
+                : message,
+            );
+          });
         }
       },
       onConnectionChange: (state) => setConnectionState(state),
@@ -212,6 +291,13 @@ export default function App() {
       micStreamRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const node = chatBottomRef.current;
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages.length]);
 
   const requestMicrophonePermission = async () => {
     if (micStreamRef.current) {
@@ -314,6 +400,7 @@ export default function App() {
         timestamp: formatTimestamp(),
         status: "送信済み",
       },
+      createPendingAssistant(),
     ]);
     setTextInput("");
   };
@@ -481,6 +568,7 @@ export default function App() {
               </article>
             ))
           )}
+          <div ref={chatBottomRef} data-testid="chat-bottom" />
         </section>
 
         <footer className="app-footer" aria-label="フッター">
