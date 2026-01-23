@@ -111,3 +111,38 @@ func TestSessionManagerTextInputEmitsMetricsUpdate(t *testing.T) {
 		t.Fatalf("expected non-negative totalMs")
 	}
 }
+
+func TestSessionManagerSpeechEndUsesStubPipeline(t *testing.T) {
+	manager := NewSessionManager()
+
+	if _, err := manager.Handle(ClientEvent{Type: "START_SESSION", SessionID: "s-voice"}); err != nil {
+		t.Fatalf("start session: %v", err)
+	}
+
+	events, err := manager.Handle(ClientEvent{
+		Type:      "USER_SPEECH_END",
+		SessionID: "s-voice",
+	})
+	if err != nil {
+		t.Fatalf("speech end: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatalf("expected server events for speech end")
+	}
+	session, ok := manager.Get("s-voice")
+	if !ok {
+		t.Fatalf("expected session to exist")
+	}
+	if len(session.Transcripts) != 1 {
+		t.Fatalf("expected transcript to be recorded")
+	}
+	foundAudio := false
+	for _, event := range events {
+		if event.Type == "AUDIO_READY" {
+			foundAudio = true
+		}
+	}
+	if !foundAudio {
+		t.Fatalf("expected AUDIO_READY event")
+	}
+}

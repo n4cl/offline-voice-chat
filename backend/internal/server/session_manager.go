@@ -100,10 +100,7 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 		if err := requireActiveSession(session); err != nil {
 			return nil, err
 		}
-		session.State = StateThinking
-		session.ActiveGenerationID = fmt.Sprintf("gen-%d", session.NextGeneration)
-		session.NextGeneration++
-		return nil, nil
+		return m.handleStubPipeline(session, event.SessionID, stubTranscriptText)
 	case "TEXT_INPUT":
 		if event.Text == "" {
 			return nil, fmt.Errorf("missing text")
@@ -112,53 +109,7 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 			session = &Session{ID: event.SessionID, NextGeneration: 1}
 			m.sessions[event.SessionID] = session
 		}
-		startedAt := time.Now()
-		session.State = StateThinking
-		session.ActiveGenerationID = fmt.Sprintf("gen-%d", session.NextGeneration)
-		session.NextGeneration++
-		session.Transcripts = append(session.Transcripts, TranscriptEntry{
-			Speaker: "user",
-			Text:    event.Text,
-		})
-		generationID := session.ActiveGenerationID
-		llmDoneAt := time.Now()
-		ttsDoneAt := time.Now()
-		llmMs := llmDoneAt.Sub(startedAt).Milliseconds()
-		ttsMs := ttsDoneAt.Sub(llmDoneAt).Milliseconds()
-		totalMs := ttsDoneAt.Sub(startedAt).Milliseconds()
-		metrics := MetricSnapshot{
-			GenerationID: generationID,
-			LLMMs:        &llmMs,
-			TTSMs:        &ttsMs,
-			TotalMs:      totalMs,
-			TimestampMs:  ttsDoneAt.UnixMilli(),
-		}
-		return []ServerEvent{
-			{
-				Type:         "ASSISTANT_SPEAKING",
-				SessionID:    event.SessionID,
-				GenerationID: generationID,
-			},
-			{
-				Type:         "AUDIO_READY",
-				SessionID:    event.SessionID,
-				GenerationID: generationID,
-				AudioBase64:  silentWavBase64,
-				MimeType:     "audio/wav",
-				Filename:     "reply.wav",
-			},
-			{
-				Type:         "METRICS_UPDATE",
-				SessionID:    event.SessionID,
-				GenerationID: generationID,
-				Metrics:      &metrics,
-			},
-			{
-				Type:         "ASSISTANT_STOPPED",
-				SessionID:    event.SessionID,
-				GenerationID: generationID,
-			},
-		}, nil
+		return m.handleStubPipeline(session, event.SessionID, event.Text)
 	case "CANCEL_RESPONSE":
 		if err := requireActiveSession(session); err != nil {
 			return nil, err
@@ -192,6 +143,7 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 }
 
 const silentWavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="
+const stubTranscriptText = "（音声入力）"
 
 // MarkDisconnected は接続断の情報を会話セッションに反映する。
 func (m *SessionManager) MarkDisconnected(sessionID string) {
@@ -213,4 +165,54 @@ func requireActiveSession(session *Session) error {
 		return fmt.Errorf("session not active")
 	}
 	return nil
+}
+
+func (m *SessionManager) handleStubPipeline(session *Session, sessionID string, text string) ([]ServerEvent, error) {
+	startedAt := time.Now()
+	session.State = StateThinking
+	session.ActiveGenerationID = fmt.Sprintf("gen-%d", session.NextGeneration)
+	session.NextGeneration++
+	session.Transcripts = append(session.Transcripts, TranscriptEntry{
+		Speaker: "user",
+		Text:    text,
+	})
+	generationID := session.ActiveGenerationID
+	llmDoneAt := time.Now()
+	ttsDoneAt := time.Now()
+	llmMs := llmDoneAt.Sub(startedAt).Milliseconds()
+	ttsMs := ttsDoneAt.Sub(llmDoneAt).Milliseconds()
+	totalMs := ttsDoneAt.Sub(startedAt).Milliseconds()
+	metrics := MetricSnapshot{
+		GenerationID: generationID,
+		LLMMs:        &llmMs,
+		TTSMs:        &ttsMs,
+		TotalMs:      totalMs,
+		TimestampMs:  ttsDoneAt.UnixMilli(),
+	}
+	return []ServerEvent{
+		{
+			Type:         "ASSISTANT_SPEAKING",
+			SessionID:    sessionID,
+			GenerationID: generationID,
+		},
+		{
+			Type:         "AUDIO_READY",
+			SessionID:    sessionID,
+			GenerationID: generationID,
+			AudioBase64:  silentWavBase64,
+			MimeType:     "audio/wav",
+			Filename:     "reply.wav",
+		},
+		{
+			Type:         "METRICS_UPDATE",
+			SessionID:    sessionID,
+			GenerationID: generationID,
+			Metrics:      &metrics,
+		},
+		{
+			Type:         "ASSISTANT_STOPPED",
+			SessionID:    sessionID,
+			GenerationID: generationID,
+		},
+	}, nil
 }
