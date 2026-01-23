@@ -25,6 +25,7 @@ type ChatMessage = {
   timestamp: string;
   status: string;
   phase?: "pending" | "ready";
+  placeholder?: boolean;
   generationId?: string;
   audio?: {
     url: string;
@@ -210,6 +211,15 @@ const createPendingAssistant = () => ({
   phase: "pending" as const,
 });
 
+const createVoicePlaceholderMessage = () => ({
+  id: `voice-${Date.now()}`,
+  speaker: "user" as const,
+  text: "音声入力を受け付けました。",
+  timestamp: formatTimestamp(),
+  status: "音声入力（仮）",
+  placeholder: true,
+});
+
 export default function App() {
   // 音声入力状態（Voice State）
   const [voiceActive, setVoiceActive] = useState(false);
@@ -299,6 +309,37 @@ export default function App() {
         }
         if (event.type === "FINAL_TRANSCRIPT") {
           setUiState("thinking");
+          setMessages((prev) => {
+            const index = [...prev]
+              .map((message, idx) => ({ message, idx }))
+              .reverse()
+              .find(
+                ({ message }) =>
+                  message.speaker === "user" && message.placeholder === true,
+              )?.idx;
+            if (index === undefined) {
+              return [
+                ...prev,
+                {
+                  id: `user-${Date.now()}`,
+                  speaker: "user",
+                  text: event.text,
+                  timestamp: formatTimestamp(),
+                  status: "文字起こし",
+                },
+              ];
+            }
+            return prev.map((message, idx) =>
+              idx === index
+                ? {
+                    ...message,
+                    text: event.text,
+                    status: "文字起こし",
+                    placeholder: false,
+                  }
+                : message,
+            );
+          });
         }
         if (event.type === "METRICS_UPDATE") {
           setMetrics(event.metrics);
@@ -527,6 +568,7 @@ export default function App() {
       if (!client) {
         return;
       }
+      setMessages((prev) => [...prev, createVoicePlaceholderMessage()]);
       client.sendUserSpeechEnd(timestampMs);
     });
     capture.onChunk((payload: AudioChunkPayload) => {

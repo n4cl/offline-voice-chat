@@ -119,6 +119,14 @@ sequenceDiagram
   Browser-->>User: Play Audio
 ```
 
+### ASR未実装時の暫定表示（ユーザー発話）
+ASRが未実装の間は、音声入力に対して暫定的なユーザー発話メッセージをチャットログへ表示する。  
+この表示は **仮のプレースホルダー** とし、ASR導入後は `FINAL_TRANSCRIPT` を正とする。
+
+**暫定表示の方針**
+- `USER_SPEECH_END` を受信したタイミングで「音声入力を受け付けました」等の表示を行う
+- ASR導入後は `FINAL_TRANSCRIPT` に置き換え、暫定表示はフェードアウト/更新で吸収する
+
 ### テキスト入力〜応答再生
 ```mermaid
 sequenceDiagram

@@ -143,11 +143,16 @@
   - activeGenerationId 以外の音声は送信しない
   - _Requirements: 5.5_
 
-- [x] 6.7 音声入力のスタブ処理をTEXT_INPUTと同一パイプラインに統合する
+- [x] [STUB] 6.7 音声入力のスタブ処理をTEXT_INPUTと同一パイプラインに統合する
   - USER_SPEECH_END で仮の文字起こしを生成する（ASRスタブ）
   - TEXT_INPUT と同じ処理関数で応答生成・音声返却を行う
   - 入力形式の差分は ASR 有無のみに限定する
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
+
+- [x] [STUB] 6.8 ASR未実装時の暫定ユーザー発話表示を実装する
+  - USER_SPEECH_END で仮メッセージを会話ログに追加する
+  - ASR導入後は FINAL_TRANSCRIPT に置き換える
+  - _Requirements: 6.1_
 
 - [ ] 7. 通信境界ポリシー
 - [ ] 7.1 (P) RFC1918 + localhost の通信境界判定を実装する

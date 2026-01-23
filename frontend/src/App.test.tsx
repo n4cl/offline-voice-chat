@@ -9,6 +9,9 @@ type WSClientMock = {
   startSession: ReturnType<typeof vi.fn>;
   stopSession: ReturnType<typeof vi.fn>;
   sendTextInput: ReturnType<typeof vi.fn>;
+  sendUserSpeechStart: ReturnType<typeof vi.fn>;
+  sendUserSpeechEnd: ReturnType<typeof vi.fn>;
+  sendAudioChunk: ReturnType<typeof vi.fn>;
   updateHandlers: ReturnType<typeof vi.fn>;
   options: {
     onEvent?: (event: unknown) => void;
@@ -27,6 +30,9 @@ const { wsInstances, createClient } = vi.hoisted(() => {
       startSession: vi.fn(),
       stopSession: vi.fn(),
       sendTextInput: vi.fn(),
+      sendUserSpeechStart: vi.fn(),
+      sendUserSpeechEnd: vi.fn(),
+      sendAudioChunk: vi.fn(),
       updateHandlers: vi.fn((handlers) => {
         instance.options = { ...instance.options, ...handlers };
       }),
@@ -45,18 +51,30 @@ type AudioCaptureMock = {
   onSpeechEnd: ReturnType<typeof vi.fn>;
   onChunk: ReturnType<typeof vi.fn>;
   onError: ReturnType<typeof vi.fn>;
+  emitSpeechStart: (timestampMs: number) => void;
+  emitSpeechEnd: (timestampMs: number) => void;
 };
 
 const { captureInstances, createCapture } = vi.hoisted(() => {
   const captureInstances: AudioCaptureMock[] = [];
   const createCapture = () => {
+    const handlers: {
+      speechStart?: (timestampMs: number) => void;
+      speechEnd?: (timestampMs: number) => void;
+    } = {};
     const instance: AudioCaptureMock = {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn(),
-      onSpeechStart: vi.fn(),
-      onSpeechEnd: vi.fn(),
+      onSpeechStart: vi.fn((callback) => {
+        handlers.speechStart = callback;
+      }),
+      onSpeechEnd: vi.fn((callback) => {
+        handlers.speechEnd = callback;
+      }),
       onChunk: vi.fn(),
       onError: vi.fn(),
+      emitSpeechStart: (timestampMs: number) => handlers.speechStart?.(timestampMs),
+      emitSpeechEnd: (timestampMs: number) => handlers.speechEnd?.(timestampMs),
     };
     captureInstances.push(instance);
     return instance;
@@ -491,5 +509,47 @@ describe("App", () => {
     const downloadLink = screen.getByRole("link", { name: /音声をダウンロード/i });
     expect(downloadLink).toHaveAttribute("href", "blob:audio");
     expect(downloadLink).toHaveAttribute("download", "reply.wav");
+  });
+
+  it("adds a placeholder message when speech ends", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    const capture = captureInstances[0];
+
+    act(() => {
+      capture.emitSpeechEnd(123);
+    });
+
+    expect(screen.getByText(/音声入力を受け付けました/i)).toBeInTheDocument();
+  });
+
+  it("replaces placeholder text when final transcript arrives", async () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音声入力開始/i }));
+    });
+
+    const capture = captureInstances[0];
+
+    act(() => {
+      capture.emitSpeechEnd(123);
+    });
+
+    act(() => {
+      client.options.onEvent?.({
+        type: "FINAL_TRANSCRIPT",
+        sessionId: "session-1",
+        text: "hello voice",
+      });
+    });
+
+    expect(screen.getByText(/hello voice/i)).toBeInTheDocument();
+    expect(screen.queryByText(/音声入力を受け付けました/i)).not.toBeInTheDocument();
   });
 });
