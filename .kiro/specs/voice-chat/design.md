@@ -271,6 +271,7 @@ type UIStatus = {
 **Responsibilities & Constraints**
 - AudioWorkletでVADを実行し発話開始/終了を判定
 - 入力は音声入力状態が有効なときのみ
+- 発話区間中は音声チャンクを逐次送信し、発話終了で送信を止める
 - 取得音声は一定フォーマットで送出
 
 **Dependencies**
@@ -317,7 +318,8 @@ interface AudioCaptureService {
 - Integration: AudioWorklet でVADを実装
 - Validation: マイク権限の有無を確認
 - Risks: 対応ブラウザの制限
-- Notes: 音声はチャンクで逐次送信（低遅延）
+- Notes: 音声はチャンクで逐次送信（ストリーミングASR前提）
+- Notes: チャンク長はデフォルト20ms、サーバ設定ファイルで指定し環境変数で上書き可能とする（20–50ms）
 
 #### AudioPlayback
 | Field | Detail |
@@ -366,6 +368,8 @@ interface AudioPlaybackService {
 - テキスト入力はWSイベント（TEXT_INPUT）として送信する
 - ページロード時に接続を開始する
 - 音声チャンクは **バイナリフレーム** で送信する（低遅延・低オーバーヘッド）
+- 接続確立後に `CONFIG` を送信し、クライアント側で音声設定を同期する
+- `CONFIG` 取得失敗時はデフォルト値（20ms）で継続し、警告を表示する
 
 **Dependencies**
 - Inbound: Orchestrator — サーバイベント (P0)
@@ -390,8 +394,16 @@ type ClientEvent =
   | { type: "PING"; sessionId: SessionId; timestampMs: number };
 
 type ServerEvent =
+  | { type: "CONFIG"; sessionId: SessionId; audioChunkMs: number }
   | { type: "ASSISTANT_SPEAKING"; sessionId: SessionId; generationId: GenerationId }
   | { type: "ASSISTANT_STOPPED"; sessionId: SessionId; generationId: GenerationId }
+  | {
+      type: "ASSISTANT_TEXT";
+      sessionId: SessionId;
+      generationId: GenerationId;
+      text: string;
+      stale?: boolean;
+    }
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "FINAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "METRICS_UPDATE"; sessionId: SessionId; metrics: MetricSnapshot }
@@ -420,10 +432,12 @@ type ErrorCode =
 
 ##### Transport Encoding
 - 音声は **チャンク単位でストリーミング送信**する
-- 送信順序:
+- 送信順序（チャンクごと）:
   1. JSON `AUDIO_CHUNK` (メタデータのみ。`byteLength` を含む)
   2. 直後の **バイナリフレーム** に raw PCM を格納
 - Base64によるサイズ増を避ける
+- Notes: メタとバイナリは1:1対応とし、一定時間内にバイナリが来ない場合は破棄して次のメタから再同期する
+- Notes: 欠落時はASR品質低下として扱い、再送は行わない（ログ記録のみ）
 
 ### ローカルオーケストレータ層
 
@@ -439,6 +453,9 @@ type ErrorCode =
 - TEXT_INPUT はASRを経由せず、ASR完了相当としてLLM/TTSへ進める
 - TEXT_INPUT は音声入力状態に関わらず受理する
 - TEXT_INPUT を受信したら user の transcript をSessionStoreへ追加する
+- 最新 generationId を activeGenerationId として保持し、古い応答の音声は送信しない
+- LLM開始前のキャンセルは処理を中断し、応答テキストは送信しない
+- LLM開始後にキャンセルされた応答は `ASSISTANT_TEXT` を stale として送信し、音声は送信しない
 
 **Dependencies**
 - Inbound: WSClient — クライアントイベント (P0)
@@ -463,6 +480,7 @@ interface OrchestratorService {
 - Validation: 状態遷移の整合性をチェック
 - Risks: 中断競合による再生誤り
 - Notes: TEXT_INPUT 受信時に sessionId が未存在なら新規の会話セッションを初期化して処理を継続する
+- Notes: stale 応答の扱いは「テキストのみ表示、音声は再生しない」
 
 #### SessionStore
 | Field | Detail |
@@ -528,6 +546,8 @@ interface SessionStoreService {
 - 外向き通信検知時の停止
 - 起動時に全エンドポイントが RFC1918/localhost であることを検証
 - 許可範囲は localhost と RFC1918 のプライベートレンジに限定
+- ホスト名の接続先は拒否する（IPアドレスのみ許可）
+- IPv6 は許可対象外（IPv4 の RFC1918 と 127.0.0.0/8 のみ許可）
 - 入力経路（音声/テキスト）に関わらず外部サービス呼び出し前に必ず適用する
 
 **Dependencies**
@@ -564,6 +584,7 @@ interface BoundaryGuardService {
 - Integration: 起動時検証 + アダプタ呼び出し直前に検査
 - Validation: 設定値の整合性
 - Risks: サービス側の設定逸脱
+- Notes: 接続先はIP表記のみ許可し、DNS解決は行わない
 
 #### Metrics
 | Field | Detail |
@@ -627,6 +648,7 @@ interface MetricsService {
 
 **Responsibilities & Constraints**
 - 音声入力をASRに変換してテキストを取得
+- チャンク単位で部分結果/最終結果を返す
 
 **Dependencies**
 - Inbound: Orchestrator — 変換要求 (P0)
@@ -649,6 +671,7 @@ interface ASRService {
 - Integration: 変換失敗時はASR_FAILED
 - Validation: サンプルレート整合
 - Risks: CPU負荷
+- Notes: ストリーミングASRを想定し、isFinal=false を部分結果として扱う
 
 #### LLMAdapter
 | Field | Detail |
