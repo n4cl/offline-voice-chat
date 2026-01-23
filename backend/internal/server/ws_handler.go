@@ -92,8 +92,9 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = writeServerEvent(r.Context(), conn, configEvent)
 
 	var lastSessionID string
+	var pendingAudioChunk bool
 	for {
-		clientEvent, err := readClientEvent(r.Context(), conn)
+		messageType, data, err := conn.Read(r.Context())
 		if err != nil {
 			if lastSessionID != "" {
 				h.sessions.MarkDisconnected(lastSessionID)
@@ -107,8 +108,34 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			)
 			return
 		}
+		if messageType == websocket.MessageBinary {
+			if pendingAudioChunk {
+				pendingAudioChunk = false
+			}
+			continue
+		}
+
+		clientEvent, err := parseClientEvent(data)
+		if err != nil {
+			if pendingAudioChunk {
+				pendingAudioChunk = false
+			}
+			slog.Error(
+				"ws_read_error",
+				"event", "ws_read_error",
+				"connId", connID,
+				"sessionId", lastSessionID,
+				"err", err,
+			)
+			return
+		}
 		if clientEvent.SessionID != "" {
 			lastSessionID = clientEvent.SessionID
+		}
+		if clientEvent.Type == "AUDIO_CHUNK" && clientEvent.Chunk != nil {
+			pendingAudioChunk = true
+		} else if pendingAudioChunk {
+			pendingAudioChunk = false
 		}
 		logClientEvent(connID, clientEvent)
 
@@ -133,12 +160,7 @@ func (h *WSHandler) nextConnectionID() string {
 	return fmt.Sprintf("conn-%d", id)
 }
 
-func readClientEvent(ctx context.Context, conn *websocket.Conn) (ClientEvent, error) {
-	_, data, err := conn.Read(ctx)
-	if err != nil {
-		return ClientEvent{}, err
-	}
-
+func parseClientEvent(data []byte) (ClientEvent, error) {
 	var envelope struct {
 		Type string `json:"type"`
 	}

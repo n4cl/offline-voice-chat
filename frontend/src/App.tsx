@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import "./app.css";
-import { type ConnectionState, type MetricSnapshot, type ServerEvent, type WSClient } from "./lib/wsClient";
+import { AudioCapture, type AudioChunkPayload } from "./lib/audioCapture";
+import {
+  type ConnectionState,
+  type MetricSnapshot,
+  type ServerEvent,
+  type WSClient,
+} from "./lib/wsClient";
 import { acquireWSClient, releaseWSClient } from "./lib/wsClientManager";
 
 type BoundaryView = {
@@ -220,6 +226,7 @@ export default function App() {
   const [metrics, setMetrics] = useState<MetricSnapshot | null>(null);
   const [audioChunkMs, setAudioChunkMs] = useState(DEFAULT_AUDIO_CHUNK_MS);
   const clientRef = useRef<WSClient | null>(null);
+  const audioCaptureRef = useRef<AudioCapture | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
@@ -426,6 +433,10 @@ export default function App() {
   useEffect(() => {
     return () => {
       clearConfigWarningTimer();
+      if (audioCaptureRef.current) {
+        audioCaptureRef.current.stop();
+        audioCaptureRef.current = null;
+      }
       for (const url of audioUrlsRef.current) {
         URL.revokeObjectURL(url);
       }
@@ -480,6 +491,59 @@ export default function App() {
       });
       return false;
     }
+  };
+
+  const handleAudioCaptureError = (error: Error) => {
+    setNotice({
+      title: "音声入力エラー",
+      message: error.message || "音声入力の初期化に失敗しました。",
+    });
+    setVoiceActive(false);
+    setUiState("idle");
+  };
+
+  const createAudioCapture = () => {
+    const getUserMedia = async (constraints: MediaStreamConstraints) => {
+      if (micStreamRef.current) {
+        return micStreamRef.current;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      micStreamRef.current = stream;
+      return stream;
+    };
+    const capture = new AudioCapture({
+      getUserMedia,
+      chunkDurationMs: audioChunkMs,
+    });
+    capture.onSpeechStart((timestampMs) => {
+      const client = clientRef.current;
+      if (!client) {
+        return;
+      }
+      client.sendUserSpeechStart(timestampMs);
+    });
+    capture.onSpeechEnd((timestampMs) => {
+      const client = clientRef.current;
+      if (!client) {
+        return;
+      }
+      client.sendUserSpeechEnd(timestampMs);
+    });
+    capture.onChunk((payload: AudioChunkPayload) => {
+      const client = clientRef.current;
+      if (!client) {
+        return;
+      }
+      client.sendAudioChunk({
+        meta: {
+          ...payload.meta,
+          sessionId,
+        },
+        data: payload.data,
+      });
+    });
+    capture.onError(handleAudioCaptureError);
+    return capture;
   };
 
   /**
@@ -664,6 +728,13 @@ export default function App() {
     if (playbackReady) {
       setNotice(null);
     }
+    if (audioCaptureRef.current) {
+      audioCaptureRef.current.stop();
+      audioCaptureRef.current = null;
+    }
+    const capture = createAudioCapture();
+    audioCaptureRef.current = capture;
+    await capture.start();
     client.startSession(sessionId);
   };
 
@@ -674,6 +745,10 @@ export default function App() {
     const client = clientRef.current;
     if (!client) {
       return;
+    }
+    if (audioCaptureRef.current) {
+      audioCaptureRef.current.stop();
+      audioCaptureRef.current = null;
     }
     stopMicrophone();
     client.stopSession();

@@ -38,6 +38,32 @@ const { wsInstances, createClient } = vi.hoisted(() => {
   return { wsInstances, createClient };
 });
 
+type AudioCaptureMock = {
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  onSpeechStart: ReturnType<typeof vi.fn>;
+  onSpeechEnd: ReturnType<typeof vi.fn>;
+  onChunk: ReturnType<typeof vi.fn>;
+  onError: ReturnType<typeof vi.fn>;
+};
+
+const { captureInstances, createCapture } = vi.hoisted(() => {
+  const captureInstances: AudioCaptureMock[] = [];
+  const createCapture = () => {
+    const instance: AudioCaptureMock = {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn(),
+      onSpeechStart: vi.fn(),
+      onSpeechEnd: vi.fn(),
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+    };
+    captureInstances.push(instance);
+    return instance;
+  };
+  return { captureInstances, createCapture };
+});
+
 vi.mock("./lib/wsClientManager", () => {
   return {
     acquireWSClient: vi.fn((options: WSClientMock["options"]) => createClient(options)),
@@ -45,8 +71,20 @@ vi.mock("./lib/wsClientManager", () => {
   };
 });
 
+vi.mock("./lib/audioCapture", () => {
+  class AudioCapture {
+    constructor() {
+      return createCapture();
+    }
+  }
+  return {
+    AudioCapture,
+  };
+});
+
 beforeEach(() => {
   wsInstances.length = 0;
+  captureInstances.length = 0;
   vi.clearAllMocks();
   const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
   Object.defineProperty(global.navigator, "mediaDevices", {

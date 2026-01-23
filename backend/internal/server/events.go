@@ -8,6 +8,7 @@ type AudioChunk struct {
 	Format      string `json:"format,omitempty"`
 	SampleRate  int    `json:"sampleRateHz,omitempty"`
 	Channels    int    `json:"channels,omitempty"`
+	ByteLength  int    `json:"byteLength,omitempty"`
 	Data        any    `json:"data,omitempty"`
 }
 

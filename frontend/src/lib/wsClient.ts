@@ -6,13 +6,18 @@ export type BoundaryScope = "localhost" | "rfc1918";
 export type AudioFormat = "pcm16" | "wav";
 export type SampleRateHz = 16000 | 24000 | 48000;
 
-export type AudioChunk = {
+export type AudioChunkMeta = {
   sessionId: SessionId;
   sequence: number;
   timestampMs: number;
   format: AudioFormat;
   sampleRateHz: SampleRateHz;
   channels: 1 | 2;
+  byteLength: number;
+};
+
+export type AudioChunkPayload = {
+  meta: AudioChunkMeta;
   data: ArrayBuffer;
 };
 
@@ -32,7 +37,7 @@ export type ClientEvent =
   | { type: "USER_SPEECH_END"; sessionId: SessionId; timestampMs: number }
   | { type: "TEXT_INPUT"; sessionId: SessionId; text: string }
   | { type: "CANCEL_RESPONSE"; sessionId: SessionId; generationId: GenerationId }
-  | { type: "AUDIO_CHUNK"; chunk: AudioChunk }
+  | { type: "AUDIO_CHUNK"; chunk: AudioChunkMeta }
   | { type: "PING"; sessionId: SessionId; timestampMs: number };
 
 export type ServerEvent =
@@ -188,12 +193,27 @@ export class WSClient {
   }
 
   /** 音声チャンクを送信する。 */
-  sendAudioChunk(chunk: AudioChunk) {
-    const sessionId = chunk.sessionId || this.requireSession();
-    this.sendEvent({
-      type: "AUDIO_CHUNK",
-      chunk: { ...chunk, sessionId },
-    });
+  sendAudioChunk(payload: AudioChunkPayload) {
+    if (!this.socket || this.socket.readyState !== WS_READY_STATE_OPEN) {
+      return;
+    }
+    const sessionId = payload.meta.sessionId || this.requireSession();
+    const meta = {
+      ...payload.meta,
+      sessionId,
+      byteLength: payload.data.byteLength,
+    };
+    this.socket.send(
+      JSON.stringify({
+        type: "AUDIO_CHUNK",
+        chunk: meta,
+      }),
+    );
+    try {
+      this.socket.send(payload.data);
+    } catch {
+      // バイナリ送信に失敗した場合は破棄する。
+    }
   }
 
   /** 接続疎通確認のPINGを送信する。 */

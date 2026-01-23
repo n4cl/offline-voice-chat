@@ -1,6 +1,7 @@
 type VadMessage =
   | { type: "speech_start"; timestampMs: number }
   | { type: "speech_end"; timestampMs: number }
+  | { type: "audio_frame"; payload: Float32Array }
   | { type: "error"; message: string };
 
 class VadProcessor extends AudioWorkletProcessor {
@@ -51,12 +52,17 @@ class VadProcessor extends AudioWorkletProcessor {
       this.postMessage({ type: "speech_end", timestampMs: Math.round(currentTime * 1000) });
     }
 
+    if (this.speaking) {
+      const frame = new Float32Array(channel);
+      this.postMessage({ type: "audio_frame", payload: frame }, [frame.buffer]);
+    }
+
     return true;
   }
 
-  private postMessage(message: VadMessage) {
+  private postMessage(message: VadMessage, transfer?: Transferable[]) {
     try {
-      this.port.postMessage(message);
+      this.port.postMessage(message, transfer ?? []);
     } catch (error) {
       this.port.postMessage({
         type: "error",

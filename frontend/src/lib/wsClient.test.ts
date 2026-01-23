@@ -10,7 +10,7 @@ class MockWebSocket {
 
   url: string;
   readyState = MockWebSocket.CONNECTING;
-  sent: string[] = [];
+  sent: unknown[] = [];
   private listeners: Record<string, Array<(event: any) => void>> = {};
 
   constructor(url: string) {
@@ -29,7 +29,7 @@ class MockWebSocket {
     this.listeners[type] = (this.listeners[type] || []).filter((item) => item !== listener);
   }
 
-  send(data: string) {
+  send(data: unknown) {
     this.sent.push(data);
   }
 
@@ -140,7 +140,7 @@ describe("WSClient", () => {
     });
   });
 
-  it("sends audio chunk events with session context", () => {
+  it("sends audio chunk meta followed by binary payload", () => {
     const client = new WSClient({
       url: "ws://localhost/ws",
       websocketFactory: createMockSocket,
@@ -150,17 +150,21 @@ describe("WSClient", () => {
     const socket = MockWebSocket.instances[0];
     socket.open();
 
+    const payload = new ArrayBuffer(4);
     client.sendAudioChunk({
-      sessionId: "session-1",
-      sequence: 1,
-      timestampMs: 123,
-      format: "pcm16",
-      sampleRateHz: 16000,
-      channels: 1,
-      data: new ArrayBuffer(4),
+      meta: {
+        sessionId: "session-1",
+        sequence: 1,
+        timestampMs: 123,
+        format: "pcm16",
+        sampleRateHz: 16000,
+        channels: 1,
+        byteLength: payload.byteLength,
+      },
+      data: payload,
     });
 
-    expect(socket.sent).toEqual([
+    expect(socket.sent[0]).toEqual(
       JSON.stringify({
         type: "AUDIO_CHUNK",
         chunk: {
@@ -170,10 +174,11 @@ describe("WSClient", () => {
           format: "pcm16",
           sampleRateHz: 16000,
           channels: 1,
-          data: {},
+          byteLength: 4,
         },
       }),
-    ]);
+    );
+    expect(socket.sent[1]).toBe(payload);
   });
 
   it("sends text input events with session context", () => {

@@ -107,6 +107,49 @@ func TestWSConfigSentOnConnect(t *testing.T) {
 	}
 }
 
+func TestWSAcceptsAudioChunkBinaryFrames(t *testing.T) {
+	srv := httptest.NewServer(NewMux())
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	_ = readServerEvent(t, conn)
+	_ = readServerEvent(t, conn)
+
+	sessionID := "session-1"
+	writeClientEvent(t, conn, ClientEvent{Type: "START_SESSION", SessionID: sessionID})
+
+	writeClientEvent(t, conn, ClientEvent{
+		Type:      "AUDIO_CHUNK",
+		SessionID: sessionID,
+		Chunk: &AudioChunk{
+			SessionID:   sessionID,
+			Sequence:    1,
+			TimestampMs: 100,
+			Format:      "pcm16",
+			SampleRate:  16000,
+			Channels:    1,
+			ByteLength:  4,
+		},
+	})
+	writeBinaryFrame(t, conn, []byte{0, 1, 2, 3})
+
+	ts := int64(42)
+	writeClientEvent(t, conn, ClientEvent{Type: "PING", SessionID: sessionID, TimestampMs: ts})
+	event := readServerEvent(t, conn)
+	if event.Type != "PONG" {
+		t.Fatalf("expected PONG, got %q", event.Type)
+	}
+}
+
 func readServerEvent(t *testing.T, conn *websocket.Conn) ServerEvent {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -134,6 +177,15 @@ func writeClientEvent(t *testing.T, conn *websocket.Conn, event ClientEvent) {
 	defer cancel()
 	if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
 		t.Fatalf("write event: %v", err)
+	}
+}
+
+func writeBinaryFrame(t *testing.T, conn *websocket.Conn, payload []byte) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := conn.Write(ctx, websocket.MessageBinary, payload); err != nil {
+		t.Fatalf("write binary: %v", err)
 	}
 }
 
