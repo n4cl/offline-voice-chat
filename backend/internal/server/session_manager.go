@@ -100,7 +100,10 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 		if err := requireActiveSession(session); err != nil {
 			return nil, err
 		}
-		return m.handleStubPipeline(session, event.SessionID, stubTranscriptText)
+		asrStart := time.Now()
+		text := stubTranscriptText
+		asrMs := time.Since(asrStart).Milliseconds()
+		return m.handlePipeline(session, event.SessionID, text, &asrMs)
 	case "TEXT_INPUT":
 		if event.Text == "" {
 			return nil, fmt.Errorf("missing text")
@@ -109,7 +112,7 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 			session = &Session{ID: event.SessionID, NextGeneration: 1}
 			m.sessions[event.SessionID] = session
 		}
-		return m.handleStubPipeline(session, event.SessionID, event.Text)
+		return m.handlePipeline(session, event.SessionID, event.Text, nil)
 	case "CANCEL_RESPONSE":
 		if err := requireActiveSession(session); err != nil {
 			return nil, err
@@ -144,6 +147,7 @@ func (m *SessionManager) Handle(event ClientEvent) ([]ServerEvent, error) {
 
 const silentWavBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="
 const stubTranscriptText = "（音声入力）"
+const stubAssistantResponsePrefix = "（応答）"
 
 // MarkDisconnected は接続断の情報を会話セッションに反映する。
 func (m *SessionManager) MarkDisconnected(sessionID string) {
@@ -167,23 +171,34 @@ func requireActiveSession(session *Session) error {
 	return nil
 }
 
-func (m *SessionManager) handleStubPipeline(session *Session, sessionID string, text string) ([]ServerEvent, error) {
+func (m *SessionManager) handlePipeline(session *Session, sessionID string, text string, asrMs *int64) ([]ServerEvent, error) {
 	startedAt := time.Now()
 	session.State = StateThinking
 	session.ActiveGenerationID = fmt.Sprintf("gen-%d", session.NextGeneration)
 	session.NextGeneration++
 	session.Transcripts = append(session.Transcripts, TranscriptEntry{
-		Speaker: "user",
-		Text:    text,
+		Speaker:     "user",
+		Text:        text,
+		TimestampMs: time.Now().UnixMilli(),
 	})
 	generationID := session.ActiveGenerationID
+	llmStartedAt := time.Now()
+	assistantText := stubLLM(session.Transcripts)
 	llmDoneAt := time.Now()
+	session.Transcripts = append(session.Transcripts, TranscriptEntry{
+		Speaker:     "assistant",
+		Text:        assistantText,
+		TimestampMs: llmDoneAt.UnixMilli(),
+	})
+	ttsStartedAt := time.Now()
+	audioBase64, _ := stubTTS(assistantText)
 	ttsDoneAt := time.Now()
-	llmMs := llmDoneAt.Sub(startedAt).Milliseconds()
-	ttsMs := ttsDoneAt.Sub(llmDoneAt).Milliseconds()
+	llmMs := llmDoneAt.Sub(llmStartedAt).Milliseconds()
+	ttsMs := ttsDoneAt.Sub(ttsStartedAt).Milliseconds()
 	totalMs := ttsDoneAt.Sub(startedAt).Milliseconds()
 	metrics := MetricSnapshot{
 		GenerationID: generationID,
+		ASRMs:        asrMs,
 		LLMMs:        &llmMs,
 		TTSMs:        &ttsMs,
 		TotalMs:      totalMs,
@@ -199,7 +214,7 @@ func (m *SessionManager) handleStubPipeline(session *Session, sessionID string, 
 			Type:         "AUDIO_READY",
 			SessionID:    sessionID,
 			GenerationID: generationID,
-			AudioBase64:  silentWavBase64,
+			AudioBase64:  audioBase64,
 			MimeType:     "audio/wav",
 			Filename:     "reply.wav",
 		},
@@ -215,4 +230,18 @@ func (m *SessionManager) handleStubPipeline(session *Session, sessionID string, 
 			GenerationID: generationID,
 		},
 	}, nil
+}
+
+func stubLLM(history []TranscriptEntry) string {
+	for idx := len(history) - 1; idx >= 0; idx-- {
+		if history[idx].Speaker == "user" {
+			return stubAssistantResponsePrefix + history[idx].Text
+		}
+	}
+	return stubAssistantResponsePrefix
+}
+
+func stubTTS(text string) (string, int) {
+	_ = text
+	return silentWavBase64, 24000
 }

@@ -62,8 +62,16 @@ func TestSessionManagerTextInputCreatesSession(t *testing.T) {
 	}
 	if session, ok := manager.Get("s-text"); !ok {
 		t.Fatalf("expected session to be created")
-	} else if len(session.Transcripts) != 1 || session.Transcripts[0].Text != "hello" {
-		t.Fatalf("expected transcript to be recorded")
+	} else {
+		if len(session.Transcripts) != 2 {
+			t.Fatalf("expected user and assistant transcripts to be recorded")
+		}
+		if session.Transcripts[0].Text != "hello" {
+			t.Fatalf("expected user transcript to be recorded")
+		}
+		if session.Transcripts[1].Speaker != "assistant" {
+			t.Fatalf("expected assistant transcript")
+		}
 	}
 	foundAudio := false
 	for _, event := range events {
@@ -133,8 +141,8 @@ func TestSessionManagerSpeechEndUsesStubPipeline(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected session to exist")
 	}
-	if len(session.Transcripts) != 1 {
-		t.Fatalf("expected transcript to be recorded")
+	if len(session.Transcripts) != 2 {
+		t.Fatalf("expected user and assistant transcripts to be recorded")
 	}
 	foundAudio := false
 	for _, event := range events {
