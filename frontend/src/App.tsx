@@ -29,6 +29,7 @@ type ChatMessage = {
 type Notice = {
   title: string;
   message: string;
+  kind?: "config" | "general";
 };
 
 type ErrorState = {
@@ -53,6 +54,11 @@ const CONNECTION_LABEL: Record<ConnectionState, string> = {
   closed: "Closed",
   reconnecting: "Reconnecting",
 };
+
+const DEFAULT_AUDIO_CHUNK_MS = 20;
+const MIN_AUDIO_CHUNK_MS = 20;
+const MAX_AUDIO_CHUNK_MS = 50;
+const CONFIG_WARNING_TIMEOUT_MS = 1000;
 
 /**
  * WS接続先を決定する。環境変数があれば優先し、なければローカルを使う。
@@ -156,6 +162,13 @@ const formatMetric = (value?: number) => {
   return `${Math.round(value)}ms`;
 };
 
+const normalizeAudioChunkMs = (value: number) => {
+  if (value < MIN_AUDIO_CHUNK_MS || value > MAX_AUDIO_CHUNK_MS) {
+    return DEFAULT_AUDIO_CHUNK_MS;
+  }
+  return value;
+};
+
 /**
  * Base64文字列をバイト列へ変換する（ブラウザ/Node両対応）。
  */
@@ -205,18 +218,64 @@ export default function App() {
   const [textInput, setTextInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [metrics, setMetrics] = useState<MetricSnapshot | null>(null);
+  const [audioChunkMs, setAudioChunkMs] = useState(DEFAULT_AUDIO_CHUNK_MS);
   const clientRef = useRef<WSClient | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const audioUrlsRef = useRef<string[]>([]);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+  const configReceivedRef = useRef(false);
+  const configWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsUrl = useMemo(() => resolveWebSocketUrl(), []);
+
+  const clearConfigWarningTimer = () => {
+    if (configWarningTimerRef.current) {
+      clearTimeout(configWarningTimerRef.current);
+      configWarningTimerRef.current = null;
+    }
+  };
+
+  const resetConfigState = () => {
+    configReceivedRef.current = false;
+    setAudioChunkMs(DEFAULT_AUDIO_CHUNK_MS);
+    setNotice((current) => (current?.kind === "config" ? null : current));
+    clearConfigWarningTimer();
+  };
+
+  const scheduleConfigWarning = () => {
+    clearConfigWarningTimer();
+    configWarningTimerRef.current = setTimeout(() => {
+      if (configReceivedRef.current) {
+        return;
+      }
+      console.warn("CONFIG not received; using default audioChunkMs");
+      setNotice((current) => {
+        if (current && current.kind !== "config") {
+          return current;
+        }
+        return {
+          title: "音声設定",
+          message: `CONFIGを取得できなかったため、${DEFAULT_AUDIO_CHUNK_MS}msで継続します。`,
+          kind: "config",
+        };
+      });
+    }, CONFIG_WARNING_TIMEOUT_MS);
+  };
 
   useEffect(() => {
     const client = acquireWSClient({
       url: wsUrl,
       onEvent: (event: ServerEvent) => {
+        if (event.type === "CONFIG") {
+          const normalized = normalizeAudioChunkMs(event.audioChunkMs);
+          if (normalized !== event.audioChunkMs) {
+            console.warn("invalid audioChunkMs received; using default", event.audioChunkMs);
+          }
+          configReceivedRef.current = true;
+          setAudioChunkMs(normalized);
+          setNotice((current) => (current?.kind === "config" ? null : current));
+        }
         if (event.type === "BOUNDARY_STATUS") {
           setBoundary({ scope: event.scope, allowedRanges: event.allowedRanges });
         }
@@ -330,7 +389,19 @@ export default function App() {
           });
         }
       },
-      onConnectionChange: (state) => setConnectionState(state),
+      onConnectionChange: (state) => {
+        setConnectionState(state);
+        if (state === "connecting" || state === "reconnecting") {
+          resetConfigState();
+          return;
+        }
+        if (state === "open") {
+          scheduleConfigWarning();
+        }
+        if (state === "closed") {
+          clearConfigWarningTimer();
+        }
+      },
       onError: (error) =>
         setErrorState({
           code: "CHANNEL_DISCONNECTED",
@@ -354,6 +425,7 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      clearConfigWarningTimer();
       for (const url of audioUrlsRef.current) {
         URL.revokeObjectURL(url);
       }

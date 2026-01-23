@@ -16,15 +16,19 @@ import (
 type WSHandler struct {
 	sessions *SessionManager
 	policy   BoundaryPolicy
+	config   ServerConfig
 	nextID   uint64
 }
 
 // NewWSHandler は境界ポリシーと会話セッション管理を受け取り初期化する。
-func NewWSHandler(policy BoundaryPolicy, sessions *SessionManager) *WSHandler {
+func NewWSHandler(policy BoundaryPolicy, sessions *SessionManager, config ServerConfig) *WSHandler {
 	if sessions == nil {
 		sessions = NewSessionManager()
 	}
-	return &WSHandler{sessions: sessions, policy: policy}
+	if config.AudioChunkMs == 0 {
+		config = DefaultServerConfig()
+	}
+	return &WSHandler{sessions: sessions, policy: policy, config: config}
 }
 
 // ServeHTTP はWS接続を受け付け、クライアントイベントを処理する。
@@ -80,6 +84,12 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		AllowedRanges: h.policy.AllowedRanges,
 	}
 	_ = writeServerEvent(r.Context(), conn, boundaryEvent)
+	configEvent := ServerEvent{
+		Type:         "CONFIG",
+		SessionID:    connID,
+		AudioChunkMs: h.config.AudioChunkMs,
+	}
+	_ = writeServerEvent(r.Context(), conn, configEvent)
 
 	var lastSessionID string
 	for {

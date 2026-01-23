@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 )
 
@@ -12,7 +13,12 @@ func NewMux() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	wsHandler := NewWSHandler(DefaultBoundaryPolicy(), nil)
+	config, err := LoadServerConfigFromEnv()
+	if err != nil {
+		slog.Error("config_load_failed", "event", "config_load_failed", "err", err)
+		config = DefaultServerConfig()
+	}
+	wsHandler := NewWSHandler(DefaultBoundaryPolicy(), nil, config)
 	mux.Handle("/ws", wsHandler)
 
 	return mux

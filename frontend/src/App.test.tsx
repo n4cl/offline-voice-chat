@@ -65,6 +65,46 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: /offline voice chat/i })).toBeInTheDocument();
   });
 
+  it("shows config warning when CONFIG is not received", () => {
+    vi.useFakeTimers();
+    render(<App />);
+    const client = wsInstances[0];
+
+    act(() => {
+      client.options.onConnectionChange?.("open");
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/音声設定/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/20ms/i);
+    vi.useRealTimers();
+  });
+
+  it("does not show config warning when CONFIG arrives before timeout", () => {
+    vi.useFakeTimers();
+    render(<App />);
+    const client = wsInstances[0];
+
+    act(() => {
+      client.options.onConnectionChange?.("open");
+      client.options.onEvent?.({
+        type: "CONFIG",
+        sessionId: "session-1",
+        audioChunkMs: 25,
+      });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it("shows connection and session status labels", () => {
     render(<App />);
     expect(screen.getByText(/接続:\s*Idle/i)).toBeInTheDocument();

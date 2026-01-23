@@ -36,6 +36,7 @@ export type ClientEvent =
   | { type: "PING"; sessionId: SessionId; timestampMs: number };
 
 export type ServerEvent =
+  | { type: "CONFIG"; sessionId: SessionId; audioChunkMs: number }
   | { type: "ASSISTANT_SPEAKING"; sessionId: SessionId; generationId: GenerationId }
   | { type: "ASSISTANT_STOPPED"; sessionId: SessionId; generationId: GenerationId }
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }

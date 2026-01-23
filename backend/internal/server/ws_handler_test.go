@@ -3,12 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
-	"net/http/httptest"
 )
 
 func TestWSBoundaryStatusSentOnConnect(t *testing.T) {
@@ -55,6 +56,7 @@ func TestWSPingPong(t *testing.T) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	_ = readServerEvent(t, conn)
+	_ = readServerEvent(t, conn)
 
 	sessionID := "session-1"
 	writeClientEvent(t, conn, ClientEvent{Type: "START_SESSION", SessionID: sessionID})
@@ -71,6 +73,37 @@ func TestWSPingPong(t *testing.T) {
 	}
 	if event.TimestampMs != ts {
 		t.Fatalf("expected timestamp %d, got %d", ts, event.TimestampMs)
+	}
+}
+
+func TestWSConfigSentOnConnect(t *testing.T) {
+	dir := t.TempDir()
+	configPath := dir + "/config.json"
+	if err := os.WriteFile(configPath, []byte(`{"audioChunkMs":30}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("BACKEND_CONFIG_PATH", configPath)
+
+	srv := httptest.NewServer(NewMux())
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	_ = readServerEvent(t, conn)
+	event := readServerEvent(t, conn)
+	if event.Type != "CONFIG" {
+		t.Fatalf("expected CONFIG, got %q", event.Type)
+	}
+	if event.AudioChunkMs != 30 {
+		t.Fatalf("expected audioChunkMs 30, got %d", event.AudioChunkMs)
 	}
 }
 
