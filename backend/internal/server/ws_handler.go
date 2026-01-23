@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -19,6 +21,8 @@ type WSHandler struct {
 	config   ServerConfig
 	nextID   uint64
 }
+
+const audioChunkBinaryTimeout = 200 * time.Millisecond
 
 // NewWSHandler は境界ポリシーと会話セッション管理を受け取り初期化する。
 func NewWSHandler(policy BoundaryPolicy, sessions *SessionManager, config ServerConfig) *WSHandler {
@@ -92,7 +96,82 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = writeServerEvent(r.Context(), conn, configEvent)
 
 	var lastSessionID string
-	var pendingAudioChunk bool
+	pending := struct {
+		mu        sync.Mutex
+		token     uint64
+		timer     *time.Timer
+		sessionID string
+		sequence  int
+		active    bool
+	}{}
+
+	startPending := func(sessionID string, sequence int) {
+		pending.mu.Lock()
+		if pending.timer != nil {
+			pending.timer.Stop()
+		}
+		pending.token++
+		token := pending.token
+		pending.sessionID = sessionID
+		pending.sequence = sequence
+		pending.active = true
+		pending.timer = time.AfterFunc(audioChunkBinaryTimeout, func() {
+			pending.mu.Lock()
+			if pending.token != token {
+				pending.mu.Unlock()
+				return
+			}
+			if !pending.active {
+				pending.mu.Unlock()
+				return
+			}
+			sid := pending.sessionID
+			seq := pending.sequence
+			pending.active = false
+			pending.mu.Unlock()
+			slog.Warn(
+				"ws_audio_chunk_timeout",
+				"event", "ws_audio_chunk_timeout",
+				"connId", connID,
+				"sessionId", sid,
+				"sequence", seq,
+			)
+		})
+		pending.mu.Unlock()
+	}
+
+	clearPending := func(reason string, eventType string) {
+		pending.mu.Lock()
+		if !pending.active {
+			pending.mu.Unlock()
+			return
+		}
+		if pending.timer != nil {
+			pending.timer.Stop()
+		}
+		sid := pending.sessionID
+		seq := pending.sequence
+		pending.active = false
+		pending.mu.Unlock()
+		if reason != "" {
+			slog.Warn(
+				reason,
+				"event", reason,
+				"connId", connID,
+				"sessionId", sid,
+				"sequence", seq,
+				"nextEvent", eventType,
+			)
+		}
+	}
+
+	hasPending := func() bool {
+		pending.mu.Lock()
+		active := pending.active
+		pending.mu.Unlock()
+		return active
+	}
+
 	for {
 		messageType, data, err := conn.Read(r.Context())
 		if err != nil {
@@ -109,17 +188,14 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if messageType == websocket.MessageBinary {
-			if pendingAudioChunk {
-				pendingAudioChunk = false
+			if hasPending() {
+				clearPending("", "")
 			}
 			continue
 		}
 
 		clientEvent, err := parseClientEvent(data)
 		if err != nil {
-			if pendingAudioChunk {
-				pendingAudioChunk = false
-			}
 			slog.Error(
 				"ws_read_error",
 				"event", "ws_read_error",
@@ -133,9 +209,12 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			lastSessionID = clientEvent.SessionID
 		}
 		if clientEvent.Type == "AUDIO_CHUNK" && clientEvent.Chunk != nil {
-			pendingAudioChunk = true
-		} else if pendingAudioChunk {
-			pendingAudioChunk = false
+			if hasPending() {
+				clearPending("ws_audio_chunk_resync", clientEvent.Type)
+			}
+			startPending(clientEvent.SessionID, clientEvent.Chunk.Sequence)
+		} else if hasPending() {
+			clearPending("ws_audio_chunk_missing", clientEvent.Type)
 		}
 		logClientEvent(connID, clientEvent)
 
