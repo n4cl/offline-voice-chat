@@ -77,7 +77,7 @@
   - 6行を上限としてそれ以上はスクロールにする
   - _Requirements: 12.1_
 
-- [ ] 3.10 ASSISTANT_TEXT と stale 応答の表示を実装する
+- [x] 3.10 ASSISTANT_TEXT と stale 応答の表示を実装する
   - ASSISTANT_TEXT を応答メッセージとして表示する
   - stale=true の場合は「参考」扱いで表示し、再生や状態遷移を行わない
   - _Requirements: 5.5, 6.1_

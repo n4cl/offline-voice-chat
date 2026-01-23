@@ -27,6 +27,7 @@ type ChatMessage = {
   phase?: "pending" | "ready";
   placeholder?: boolean;
   generationId?: string;
+  stale?: boolean;
   audio?: {
     url: string;
     filename: string;
@@ -344,6 +345,56 @@ export default function App() {
         if (event.type === "METRICS_UPDATE") {
           setMetrics(event.metrics);
         }
+        if (event.type === "ASSISTANT_TEXT") {
+          const isStale = Boolean(event.stale);
+          const status = isStale ? "参考" : "応答";
+          setMessages((prev) => {
+            const updateMessage = (message: ChatMessage) => ({
+              ...message,
+              text: event.text,
+              status,
+              phase: "ready" as const,
+              generationId: event.generationId ?? message.generationId,
+              stale: isStale,
+              audio: isStale ? undefined : message.audio,
+            });
+            let index = -1;
+            if (event.generationId) {
+              index = prev.findIndex(
+                (message) =>
+                  message.speaker === "assistant" &&
+                  message.generationId === event.generationId,
+              );
+            }
+            if (index === -1) {
+              index = [...prev]
+                .map((message, idx) => ({ message, idx }))
+                .reverse()
+                .find(
+                  ({ message }) =>
+                    message.speaker === "assistant" && message.phase === "pending",
+                )?.idx ?? -1;
+            }
+            if (index >= 0) {
+              return prev.map((message, idx) =>
+                idx === index ? updateMessage(message) : message,
+              );
+            }
+            return [
+              ...prev,
+              {
+                id: `assistant-${Date.now()}`,
+                speaker: "assistant",
+                text: event.text,
+                timestamp: formatTimestamp(),
+                status,
+                phase: "ready",
+                generationId: event.generationId,
+                stale: isStale,
+              },
+            ];
+          });
+        }
         if (event.type === "ASSISTANT_SPEAKING") {
           setUiState("speaking");
           setMessages((prev) => {
@@ -377,20 +428,33 @@ export default function App() {
           setUiState("idle");
         }
         if (event.type === "AUDIO_READY") {
-          const mimeType = event.mimeType ?? "audio/wav";
-          const filename = event.filename ?? `reply-${Date.now()}.wav`;
-          const data = decodeBase64(event.audioBase64);
-          const blob = new Blob([data], { type: mimeType });
-          const url = URL.createObjectURL(blob);
-          audioUrlsRef.current.push(url);
           setMessages((prev) => {
+            if (event.generationId) {
+              const hasStale = prev.some(
+                (message) =>
+                  message.speaker === "assistant" &&
+                  message.generationId === event.generationId &&
+                  message.stale,
+              );
+              if (hasStale) {
+                return prev;
+              }
+            }
+            const mimeType = event.mimeType ?? "audio/wav";
+            const filename = event.filename ?? `reply-${Date.now()}.wav`;
+            const data = decodeBase64(event.audioBase64);
+            const blob = new Blob([data], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            audioUrlsRef.current.push(url);
             let updated = false;
             const next = prev.map((message) => {
               if (event.generationId && message.generationId === event.generationId) {
                 updated = true;
+                const nextText =
+                  message.phase === "pending" ? "音声応答が届きました。" : message.text;
                 return {
                   ...message,
-                  text: "音声応答が届きました。",
+                  text: nextText,
                   status: "音声受信",
                   phase: "ready",
                   audio: { url, filename },
@@ -418,6 +482,7 @@ export default function App() {
                   timestamp: formatTimestamp(),
                   status: "音声受信",
                   phase: "ready",
+                  generationId: event.generationId,
                   audio: { url, filename },
                 },
               ];
@@ -883,7 +948,7 @@ export default function App() {
             messages.map((message, index) => (
               <article
                 key={message.id}
-                className={`chat-bubble chat-bubble--${message.speaker} fade-up`}
+                className={`chat-bubble chat-bubble--${message.speaker} fade-up${message.stale ? " chat-bubble--stale" : ""}`}
                 style={{ animationDelay: `${index * 80}ms` }}
               >
                 <p className="chat-role">
@@ -894,7 +959,7 @@ export default function App() {
                   <span>{message.timestamp}</span>
                   <span>{message.status}</span>
                 </div>
-                {message.audio ? (
+                {message.audio && !message.stale ? (
                   <div className="chat-audio">
                     <audio
                       ref={(node) => {

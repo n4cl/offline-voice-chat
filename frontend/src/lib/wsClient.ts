@@ -44,12 +44,20 @@ export type ServerEvent =
   | { type: "CONFIG"; sessionId: SessionId; audioChunkMs: number }
   | { type: "ASSISTANT_SPEAKING"; sessionId: SessionId; generationId: GenerationId }
   | { type: "ASSISTANT_STOPPED"; sessionId: SessionId; generationId: GenerationId }
+  | {
+      type: "ASSISTANT_TEXT";
+      sessionId: SessionId;
+      generationId: GenerationId;
+      text: string;
+      stale?: boolean;
+    }
   | { type: "PARTIAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "FINAL_TRANSCRIPT"; sessionId: SessionId; text: string }
   | { type: "METRICS_UPDATE"; sessionId: SessionId; metrics: MetricSnapshot }
   | {
       type: "AUDIO_READY";
       sessionId: SessionId;
+      generationId?: GenerationId;
       audioBase64: string;
       mimeType?: string;
       filename?: string;

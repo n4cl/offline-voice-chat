@@ -511,6 +511,72 @@ describe("App", () => {
     expect(downloadLink).toHaveAttribute("download", "reply.wav");
   });
 
+  it("shows assistant text response when ASSISTANT_TEXT arrives", async () => {
+    render(<App />);
+    const client = wsInstances[0];
+
+    const input = screen.getByLabelText(/メッセージ/i) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "hello" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /送信/i }));
+    });
+
+    expect(screen.getByText(/応答を生成しています/i)).toBeInTheDocument();
+
+    act(() => {
+      client.options.onEvent?.({
+        type: "ASSISTANT_TEXT",
+        sessionId: "session-1",
+        generationId: "gen-1",
+        text: "テキスト応答です。",
+      });
+    });
+
+    expect(screen.getByText(/テキスト応答です。/i)).toBeInTheDocument();
+    expect(screen.getByText(/応答/)).toBeInTheDocument();
+    expect(screen.queryByText(/応答を生成しています/i)).not.toBeInTheDocument();
+  });
+
+  it("marks stale assistant text as reference and ignores audio ready", () => {
+    const createObjectURL = vi.fn(() => "blob:audio");
+    Object.defineProperty(global.URL, "createObjectURL", {
+      value: createObjectURL,
+      configurable: true,
+    });
+
+    render(<App />);
+    const client = wsInstances[0];
+
+    act(() => {
+      client.options.onEvent?.({
+        type: "ASSISTANT_TEXT",
+        sessionId: "session-1",
+        generationId: "gen-stale",
+        text: "古い応答",
+        stale: true,
+      });
+    });
+
+    expect(screen.getByText(/古い応答/)).toBeInTheDocument();
+    expect(screen.getByText(/参考/)).toBeInTheDocument();
+    expect(screen.getByText(/状態:\s*Idle/i)).toBeInTheDocument();
+
+    act(() => {
+      client.options.onEvent?.({
+        type: "AUDIO_READY",
+        sessionId: "session-1",
+        generationId: "gen-stale",
+        audioBase64: "AA==",
+        mimeType: "audio/wav",
+        filename: "reply.wav",
+      });
+    });
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /再生/i })).not.toBeInTheDocument();
+  });
+
   it("adds a placeholder message when speech ends", async () => {
     render(<App />);
 

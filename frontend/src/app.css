@@ -252,6 +252,11 @@ body {
   box-shadow: var(--shadow-soft);
 }
 
+.chat-bubble--stale {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
 .chat-role {
   margin: 0;
   font-size: 11px;
