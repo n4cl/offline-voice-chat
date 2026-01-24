@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -533,8 +533,11 @@ describe("App", () => {
       });
     });
 
-    expect(screen.getByText(/テキスト応答です。/i)).toBeInTheDocument();
-    expect(screen.getByText(/応答/)).toBeInTheDocument();
+    const responseText = screen.getByText(/テキスト応答です。/i);
+    expect(responseText).toBeInTheDocument();
+    const bubble = responseText.closest("article");
+    expect(bubble).not.toBeNull();
+    expect(within(bubble as HTMLElement).getByText("応答")).toBeInTheDocument();
     expect(screen.queryByText(/応答を生成しています/i)).not.toBeInTheDocument();
   });
 
